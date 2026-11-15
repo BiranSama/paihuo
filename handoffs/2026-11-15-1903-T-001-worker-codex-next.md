@@ -204,3 +204,14 @@ tasks/_TEMPLATE.md
 - 本地 Git 权限限制未解除，未安装工具、未改权限，也未同步远程历史；不能把远程提交当成本地已提交。
 - Discussions 已开启。保存 `main` 保护规则触发账号本人验证，浏览器页面已保留，规则尚未确认生效。
 - 本次新增治理简报后，候选文件数由上文历史快照的 38 增至 39；后续以 PR 的实际文件清单和 STATUS 为准。
+
+### 2026-11-15 19:22，远程初始化结果补记
+
+- 远程成果位于 [chore/bootstrap](https://github.com/BiranSama/paihuo/tree/chore/bootstrap) 和 [草稿 PR #1](https://github.com/BiranSama/paihuo/pull/1)，尚未合并。远程 `main` 仍为 README 基线 `c6e465c3d2341d44cf18c08541ee5efc3cffbade`。
+- 首批完整文档提交为 `37914b9982e0b642ff20b2c683ac269d97be3a51`；39 个文件的远程 blob 哈希与本地待发布文本逐项一致。本补记及收尾文件将形成后续提交，最新提交以 PR 的 head 为准，不能把上文的无提交或本段的首批 SHA 当成当前远程 HEAD。
+- Discussions 已开启；bug、followup、boss 标签已核验。Q-009、Q-010、Q-011 分别对应 [Issue #2](https://github.com/BiranSama/paihuo/issues/2)、[Issue #3](https://github.com/BiranSama/paihuo/issues/3)、[Issue #4](https://github.com/BiranSama/paihuo/issues/4)。产物登记备选见 [Discussion #5](https://github.com/BiranSama/paihuo/discussions/5)。
+- GitHub 本人验证已完成，浏览器显示 Branch protection rule created，`main` 规则应用于 1 条分支。填写时要求 PR、管理员不得绕过，保持禁止强推和删除分支；没有要求另一个 GitHub 账号的批准票数，独立模型评审仍按 D-016 由老板转交。管理读取 API 返回 403，未把接口读取失败误报成设置失败。
+- 三个 issue 模板和 PR 模板已在初始化分支中，网页自动加载尚未验证；合入默认分支后检查，不要提前勾选验收。
+- 本地 Git 仍无提交、无 origin，Q-012 未解除。后续具备权限的会话应先备份当前文档、读取远程分支并比对文件，再把本地历史接到已有远程；不要重做首次提交形成不相关历史，也不要覆盖尚未发布的本地修改。
+- 本次仅已确认的角色表和决定记录发生治理变更，产品设计、接口、ADR 与 T-001 至 T-005 内容未更改。本地目录仍无 `apps/`、`packages/`。
+- 新增 04 号简报后，本轮候选文件共 40 个。初始化尚未满足本地同步、模板网页核验和独立评审要求；PR 保持草稿，T-001 仍待领。
