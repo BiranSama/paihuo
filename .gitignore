@@ -1,0 +1,26 @@
+# 依赖与构建产物
+node_modules/
+dist/
+build/
+target/
+*.tsbuildinfo
+
+# 本机数据与日志：任何成员数据、对话、数据库都不进仓库
+*.db
+*.db-wal
+*.db-shm
+*.log
+/data/
+/.paihuo/
+
+# 密钥与本机配置
+.env
+.env.*
+!.env.example
+
+# 编辑器与系统
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
