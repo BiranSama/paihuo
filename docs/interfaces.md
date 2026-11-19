@@ -1,6 +1,6 @@
 # 派活 · 接口约定
 
-版本：v0.1｜更新日期：2026-11-15
+版本：v0.1｜更新日期：2026-11-20
 
 > 模块之间怎么对接。这里是约定，代码里的类型定义在 `packages/shared`，两者不一致时
 > 以代码为准，并在 `QUESTIONS.md` 上报、回头修正本文。
@@ -82,6 +82,28 @@ export interface StaffAdapter {
 
 平级的验收标准：能直接找到这位成员；它能延续自己的工作背景；能单独追问和停止；
 （第 3 期起）能进群；对产物负责。只接一次性命令、结果还要老板手工搬运的，不算员工。
+
+### 1.1 可识别错误与能力拒绝
+
+适配器和调用方从 `@paihuo/shared/staff` 导入同一个 `StaffAdapterError` 类及 `StaffErrorCode` 类型。调用方先检查 `error instanceof StaffAdapterError`，再读 `error.code`。构造形式为 `new StaffAdapterError(code, message, options?)`，可用 `options.cause` 保留底层异常。消息用于解释错误；程序分支使用稳定的错误码。
+
+| `code` | 适用情况 |
+| --- | --- |
+| `native_session_lost` | 原生会话记录已丢失，按原引用恢复失败。内核据此进入接续流程。 |
+| `harness_not_installed` | 找不到该成员所需的客户端或运行时。 |
+| `harness_not_authenticated` | 客户端存在，但执行该操作需要有效登录。 |
+| `interrupted` | 某次适配器操作因中断而抛错。对已开始并受支持的轮次，`interrupt` 后仍须以唯一的 `turn_done` 事件、原因 `interrupted` 结束事件流。 |
+| `unsupported_capability` | 调用要求了能力声明中明确关闭的操作，适配器据此拒绝。各操作的拒绝方式见下表。 |
+| `other` | 其余适配器错误，例如审批请求 ID 无效。 |
+
+| 关闭的能力 | 调用结果 |
+| --- | --- |
+| `guide` | `guide(ref, input)` 返回 `{ accepted: false }`，本轮不接收该输入。 |
+| `resume`、`interrupt`、`nativeApproval` | 对应的 `resume`、`interrupt`、`approve` 调用抛出带 `unsupported_capability` 的 `StaffAdapterError`。拒绝中断后，原轮次可以正常完成。 |
+| `images` | 对带图片附件的 `send`，在产生首个事件前以同一错误码拒绝。 |
+| `parallel` | 同一成员已有活跃轮次时，第二条会话的并行投递必须在产生事件前以同一错误码拒绝，已有轮次继续。 |
+
+真实适配器和内存适配器共用[员工接口契约测试及接入说明](../packages/shared/src/testing/README.md)。
 
 ## 2. 内核接口（界面 ↔ 内核）
 
