@@ -2,6 +2,7 @@
 *.html text eol=lf
 *.json text eol=lf
 *.lock text eol=lf
+packages/**/*.md text eol=lf
 *.mjs text eol=lf
 *.rs text eol=lf
 *.toml text eol=lf

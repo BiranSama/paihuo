@@ -14,7 +14,7 @@ Windows x64 桌面骨架启动本机内核，显示连接状态和版本。窗�
 | --- | --- |
 | [T-001](tasks/T-001.md) | Windows 桌面骨架、内核、鉴权测试与 NSIS 构建已交付。[PR #6](https://github.com/BiranSama/paihuo/pull/6) |
 | [T-002](tasks/T-002.md) | 存储层待集成，按 D-019 验证 SQLite 迁移与未归档会话唯一性。 |
-| [T-003](tasks/T-003.md) | Claude Code 离线验证待集成。 |
+| [T-003](tasks/T-003.md) | Claude Code 2.1.316 已在 Windows 验证本机命令与合成事件，真实会话待验。[PR #9](https://github.com/BiranSama/paihuo/pull/9) |
 | [T-004](tasks/T-004.md) | Codex 离线验证待集成。 |
 | [T-005](tasks/T-005.md) | 员工接口、假适配器和共用契约测试待集成。 |
 
