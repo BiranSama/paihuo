@@ -18,6 +18,8 @@ Windows x64 桌面骨架启动本机内核，显示连接状态和版本。窗�
 | [T-004](tasks/T-004.md) | Codex CLI 0.167.0 已在 Windows 验证本机命令与合成事件，真实会话待验。[PR #10](https://github.com/BiranSama/paihuo/pull/10) |
 | [T-005](tasks/T-005.md) | 已交付员工接口、可配置的内存适配器、工厂型契约套件和接入说明。[PR #11](https://github.com/BiranSama/paihuo/pull/11) |
 
+组合工作树通过 46 项 Vitest（含 13 项存储、22 项员工接口、2 项离线客户端、9 项骨架），另有 Rust 核心进程生命周期回归。
+
 ## 决定与待验
 
 - 初始化已用双父提交 `a850010` 合并，`chore/bootstrap` 保留。GitHub 上实见 boss、followup 的正文和预选标签，以及新建 PR 的八栏正文。缺陷模板和三项选择页的证据为默认分支配置与 GitHub 服务端识别，尚缺登录界面实测。[PR #1](https://github.com/BiranSama/paihuo/pull/1)
