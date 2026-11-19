@@ -12,7 +12,7 @@
 | [0001](0001-own-core-not-fork.md) | 自己写小内核，不分叉现成项目 | 已采纳 |
 | [0002](0002-one-identity-four-sessions.md) | 一个身份，四种会话 | 已采纳 |
 | [0003](0003-tauri-shell-ts-core.md) | 桌面外壳用 Tauri，内核用 TypeScript 独立服务 | 已采纳 |
-| [0004](0004-sqlite-and-member-files.md) | 存储用 SQLite 加成员文件目录 | 已采纳（文件部分为假设） |
+| [0004](0004-sqlite-and-member-files.md) | 存储用 SQLite 加成员文件目录 | 已采纳（成员文件形式见 D-019） |
 | [0005](0005-native-harness-routes.md) | harness 走各自的原生接入，ACP 作通用入口 | 已采纳（接入细节待验证） |
 | [0006](0006-members-are-data.md) | 成员是数据，创建走统一接口 | 已采纳 |
 | [0007](0007-attention-rules.md) | 注意力规则与先观察再放权 | 已采纳 |
