@@ -31,6 +31,10 @@ Claude Code 和 Codex 既要能当成员，也要能被成员一次性调用。�
   结果补充到本条。验证不通过则回到 `QUESTIONS.md`，不许硬写。
 - Clowder 已有这两条路线的实现（Claude 的 Windows 适配、Codex App Server 客户端），可作参考。
 
+### T-003 的 Windows 离线证据（2026-11-20）
+
+Claude Code 2.1.316。三个原生帮助/版本命令退出 0，13 个帮助开关可见。合成样例验证切分 UTF-8、多会话、工具配对、压缩事件和错误输入。保留 CLI 流式模式和官方 SDK 作为候选，实际恢复、中断、审批、引导、图片和 MCP 等能力待测。 [Issue #7](https://github.com/BiranSama/paihuo/issues/7) · [验证报告](../../packages/adapters/claude-code/README.md)
+
 ### T-004 的 Windows 离线证据（2026-11-20）
 
 Codex CLI 0.167.0。本机导出的协议列有 8 个客户端请求、1 个客户端通知、6 个服务端通知和 2 种审批。6 条合成消息验证双会话与审批请求关联。App Server stdio 提供持续会话和轮次控制所需的协议；本轮没有启动服务器，握手、真实轮次、沙箱行为与原生资源占用待测。 [Issue #7](https://github.com/BiranSama/paihuo/issues/7) · [验证报告](../../packages/adapters/codex/README.md)
