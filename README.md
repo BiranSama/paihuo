@@ -42,6 +42,7 @@ cargo test --release --locked --manifest-path apps/desktop/src-tauri/Cargo.toml 
 首次开发启动和首次构建会下载 Node.js 官方 Windows x64 运行时，并校验 SHA-256。
 NSIS 安装程序生成在 `apps/desktop/src-tauri/target/release/bundle/nsis/`。
 安装程序随附 Node.js 和编译后的内核，安装后的应用可以直接启动。若系统缺少 WebView2，安装程序会下载它。
+第三方许可和依赖的源代码链接位于安装目录的 `runtime/`，其中 `THIRD-PARTY-NOTICES.txt` 收录界面与外壳的依赖。
 
 ## 文档导航
 

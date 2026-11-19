@@ -10,7 +10,7 @@
     "web:build": "vite build",
     "prepare:runtime": "pnpm --filter @paihuo/core run build && node scripts/prepare-runtime.mjs",
     "prepare:dev": "pnpm run prepare:runtime && pnpm run web:dev",
-    "prepare:build": "pnpm run prepare:runtime && pnpm run web:build",
+    "prepare:build": "pnpm run prepare:runtime && pnpm run web:build && node scripts/generate-notices.mjs",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
