@@ -11,7 +11,7 @@
 
 - 结构化数据放一个 SQLite 文件。表结构见 `docs/design.md` 第 5 节，改动走迁移文件。
 - 每位成员的人设、长期记忆、工作日志放在成员目录下的 Markdown 文件里。
-- T-002 使用随固定 Node.js 24 运行时分发的 `node:sqlite`（`DatabaseSync`）。Windows x64 实测能通过内置驱动建库、迁移和强杀恢复。额外的原生绑定需要管理 Node ABI 对应的二进制，WASM 还需单独处理文件持久化。
+- 工作区最低 Node.js 为 24.10.0，从此小版本起内置 SQLite 的 setAuthorizer 可使迁移 SQL 无法自行结束事务。T-002 使用随固定 Node.js 24 运行时分发的 `node:sqlite`（`DatabaseSync`）。Windows x64 实测能通过内置驱动建库、迁移和强杀恢复。额外的原生绑定需要管理 Node ABI 对应的二进制，WASM 还需单独处理文件持久化。
 
 ## 放弃的方案
 

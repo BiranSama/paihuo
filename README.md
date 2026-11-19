@@ -16,7 +16,7 @@ Windows x64 工程骨架可以启动本地内核，在桌面窗口显示连接�
 ### 开发版（Windows x64）
 
 - Windows 10 或 11，已安装 Microsoft Edge WebView2 Runtime。
-- Node.js 24 LTS（x64）和 pnpm 11.9.0。安装步骤见 [Node.js](https://nodejs.org/en/download) 和 [pnpm](https://pnpm.io/installation)。
+- Node.js 24 LTS（x64，至少 24.10.0）和 pnpm 11.9.0。安装步骤见 [Node.js](https://nodejs.org/en/download) 和 [pnpm](https://pnpm.io/installation)。
 - Rust 的 Windows MSVC 工具链和 Rustfmt（持续集成使用 1.96.0），以及 Visual Studio Build Tools 的「使用 C++ 的桌面开发」工作负载和 Windows SDK。详见 [Tauri 的 Windows 准备步骤](https://v2.tauri.app/start/prerequisites/#windows)。
 
 在仓库根目录打开 PowerShell：
