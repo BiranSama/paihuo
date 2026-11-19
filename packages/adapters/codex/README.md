@@ -36,33 +36,33 @@ node ./packages/adapters/codex/spike/offline-check.mjs --synthetic-only
 
 表中「样例」指上面的离线命令。协议列来自本机二进制实际导出的 JSON Schema。「合成通过」表示本地样例处理预制输入的断言通过。
 
-| 项目 | 离线结果 | 可重复命令或样例 | 已观察到的现象 | 实测边界 |
-| --- | --- | --- | --- | --- |
-| 1. 启动与前言 | CLI 可用，握手协议有定义 | 样例的 `localHelp`、`initializeRequired`、`clientNotifications`、`startFields` | 帮助列出 stdio，schema 定义 `initialize`、`initialized`，`thread/start` 参数包含 `cwd` 和 `baseInstructions` | App Server 握手、指定目录及前言实际生效待验 |
-| 2. 流式输出 | 协议有定义，合成通过 | 样例的 `serverNotifications`、`syntheticEvents` | 本机协议有项目开始与完成、文本增量通知。切分 UTF-8 字节和交错消息后，合成文本仍正确拼接到各自会话 | 真实模型增量、工具事件及顺序待验 |
-| 3. 会话 ID | 协议有定义 | 样例的 `startResponseRequired`、`serverNotifications` | `thread/start` 响应要求 `thread`，协议列有 `thread/started` | 服务端实际生成的 ID 与持久化待验 |
-| 4. 恢复 | 协议有定义 | 样例的 `resumeRequired` | `thread/resume` 要求 `threadId` | 进程退出后按 ID 恢复与上下文保留待验 |
-| 5. 并行 | 合成通过 | 样例的 `syntheticEvents` | 两条会话的交错消息依 `threadId` 分流，并核对所属轮次 | 原生并行执行、工作目录隔离与资源占用待验 |
-| 6. 中断 | 协议有定义，合成通过 | 样例的 `interruptRequired`、`syntheticEvents` | `turn/interrupt` 要求 `threadId`、`turnId`，样例从预制 `turn/completed` 读出 `interrupted` | 发出中断后的模型、工具与会话状态待验 |
-| 7. 引导 | 协议有定义 | 样例的 `steerRequired` | `turn/steer` 要求 `threadId`、`expectedTurnId` 和输入 | 活跃轮次接收引导、输入生效时机及结束竞态待验 |
-| 8. 权限 | 协议有定义，合成通过 | 样例的 `serverRequests`、`syntheticEvents` | 本机协议有命令和文件修改审批。样例将预制命令审批与原请求 ID 关联，并在内存构造拒绝响应 | 原生审批往返、权限模式与 Windows 执行限制待验 |
-| 9. 长对话 | 协议有定义 | 样例的 `clientRequests`、`serverNotifications` | 协议有 `thread/compact/start` 和 `thread/tokenUsage/updated` | 自动压缩阈值、触发条件、压缩质量及恢复效果待验 |
-| 10. 成员工具 | 协议有定义 | 样例的 `clientRequests` | 协议有 `mcpServerStatus/list` | 本机测试 MCP 的初始化及模型工具调用待验 |
-| 11. 登录与计费 | 待验 | 样例只查版本、帮助和协议导出 | 这三类命令在空白 Codex 配置目录下成功运行 | 现有订阅登录、账号限制及计费需要独立授权验证 |
-| 12. 资源 | CLI 子进程退出已观察 | 执行样例并核对退出码与临时目录 | 版本、帮助、协议导出均返回，样例结束时临时目录已清理 | App Server 空闲、运行、休眠和退出的内存及进程树待测 |
-| 13. App Server 与非交互 CLI | CLI 帮助已观察，协议有定义 | 样例的 `localHelp`、`clientRequests`、`serverRequests` | `exec` 提供 `--json`，`exec resume` 支持传会话 ID。App Server 协议另外列出活跃轮次引导、中断及双向审批 | 真实轮次的两种入口对比待验 |
-| 14. Windows 原生运行 | CLI 原生执行已观察 | 在 Windows PowerShell 执行样例 | npm 对应的 `codex.exe` 成功输出帮助并导出协议 | App Server 运行和 Windows 沙箱就绪、文件与网络策略待验 |
+| 项目                        | 离线结果                   | 可重复命令或样例                                                               | 已观察到的现象                                                                                               | 实测边界                                               |
+| --------------------------- | -------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------ |
+| 1. 启动与前言               | CLI 可用，握手协议有定义   | 样例的 `localHelp`、`initializeRequired`、`clientNotifications`、`startFields` | 帮助列出 stdio，schema 定义 `initialize`、`initialized`，`thread/start` 参数包含 `cwd` 和 `baseInstructions` | App Server 握手、指定目录及前言实际生效待验            |
+| 2. 流式输出                 | 协议有定义，合成通过       | 样例的 `serverNotifications`、`syntheticEvents`                                | 本机协议有项目开始与完成、文本增量通知。切分 UTF-8 字节和交错消息后，合成文本仍正确拼接到各自会话            | 真实模型增量、工具事件及顺序待验                       |
+| 3. 会话 ID                  | 协议有定义                 | 样例的 `startResponseRequired`、`serverNotifications`                          | `thread/start` 响应要求 `thread`，协议列有 `thread/started`                                                  | 服务端实际生成的 ID 与持久化待验                       |
+| 4. 恢复                     | 协议有定义                 | 样例的 `resumeRequired`                                                        | `thread/resume` 要求 `threadId`                                                                              | 进程退出后按 ID 恢复与上下文保留待验                   |
+| 5. 并行                     | 合成通过                   | 样例的 `syntheticEvents`                                                       | 两条会话的交错消息依 `threadId` 分流，并核对所属轮次                                                         | 原生并行执行、工作目录隔离与资源占用待验               |
+| 6. 中断                     | 协议有定义，合成通过       | 样例的 `interruptRequired`、`syntheticEvents`                                  | `turn/interrupt` 要求 `threadId`、`turnId`，样例从预制 `turn/completed` 读出 `interrupted`                   | 发出中断后的模型、工具与会话状态待验                   |
+| 7. 引导                     | 协议有定义                 | 样例的 `steerRequired`                                                         | `turn/steer` 要求 `threadId`、`expectedTurnId` 和输入                                                        | 活跃轮次接收引导、输入生效时机及结束竞态待验           |
+| 8. 权限                     | 协议有定义，合成通过       | 样例的 `serverRequests`、`syntheticEvents`                                     | 本机协议有命令和文件修改审批。样例将预制命令审批与原请求 ID 关联，并在内存构造拒绝响应                       | 原生审批往返、权限模式与 Windows 执行限制待验          |
+| 9. 长对话                   | 协议有定义                 | 样例的 `clientRequests`、`serverNotifications`                                 | 协议有 `thread/compact/start` 和 `thread/tokenUsage/updated`                                                 | 自动压缩阈值、触发条件、压缩质量及恢复效果待验         |
+| 10. 成员工具                | 协议有定义                 | 样例的 `clientRequests`                                                        | 协议有 `mcpServerStatus/list`                                                                                | 本机测试 MCP 的初始化及模型工具调用待验                |
+| 11. 登录与计费              | 待验                       | 样例只查版本、帮助和协议导出                                                   | 这三类命令在空白 Codex 配置目录下成功运行                                                                    | 现有订阅登录、账号限制及计费需要独立授权验证           |
+| 12. 资源                    | CLI 子进程退出已观察       | 执行样例并核对退出码与临时目录                                                 | 版本、帮助、协议导出均返回，样例结束时临时目录已清理                                                         | App Server 空闲、运行、休眠和退出的内存及进程树待测    |
+| 13. App Server 与非交互 CLI | CLI 帮助已观察，协议有定义 | 样例的 `localHelp`、`clientRequests`、`serverRequests`                         | `exec` 提供 `--json`，`exec resume` 支持传会话 ID。App Server 协议另外列出活跃轮次引导、中断及双向审批       | 真实轮次的两种入口对比待验                             |
+| 14. Windows 原生运行        | CLI 原生执行已观察         | 在 Windows PowerShell 执行样例                                                 | npm 对应的 `codex.exe` 成功输出帮助并导出协议                                                                | App Server 运行和 Windows 沙箱就绪、文件与网络策略待验 |
 
 ## AdapterCapabilities
 
-| 字段 | 离线证据 | 原生能力状态 |
-| --- | --- | --- |
-| `resume` | `thread/resume` 与 `threadId` | 持久化恢复待验 |
-| `guide` | `turn/steer` 与 `expectedTurnId` | 对活跃轮次的引导待验 |
-| `interrupt` | `turn/interrupt` 与合成 `interrupted` | 原生中断及子进程行为待验 |
-| `parallel` | 合成数据按会话和轮次关联 | 原生并行待验 |
-| `images` | 从 `turn/start` schema 分别断言 `image`、`localImage` 均存在 | 图片传入与模型处理待验 |
-| `nativeApproval` | 协议包含两类审批，合成消息验证请求 ID 关联 | 原生审批往返待验 |
+| 字段             | 离线证据                                                     | 原生能力状态             |
+| ---------------- | ------------------------------------------------------------ | ------------------------ |
+| `resume`         | `thread/resume` 与 `threadId`                                | 持久化恢复待验           |
+| `guide`          | `turn/steer` 与 `expectedTurnId`                             | 对活跃轮次的引导待验     |
+| `interrupt`      | `turn/interrupt` 与合成 `interrupted`                        | 原生中断及子进程行为待验 |
+| `parallel`       | 合成数据按会话和轮次关联                                     | 原生并行待验             |
+| `images`         | 从 `turn/start` schema 分别断言 `image`、`localImage` 均存在 | 图片传入与模型处理待验   |
+| `nativeApproval` | 协议包含两类审批，合成消息验证请求 ID 关联                   | 原生审批往返待验         |
 
 ## 对接结论
 
