@@ -1,0 +1,16 @@
+*.css text eol=lf
+*.html text eol=lf
+*.json text eol=lf
+*.lock text eol=lf
+*.mjs text eol=lf
+*.rs text eol=lf
+*.toml text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+
+*.exe binary
+*.ico binary
+*.png binary
+*.zip binary
