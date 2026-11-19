@@ -1,0 +1,59 @@
+name: Verify GitHub templates
+on:
+  push:
+    branches: [task/T-001-scaffold]
+    paths: [.github/workflows/verify-templates.yml]
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+jobs:
+  verify:
+    runs-on: windows-2025
+    timeout-minutes: 4
+    steps:
+      - name: Compare GitHub template defaults with main
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $query = @'
+          query {
+            repository(owner:"BiranSama",name:"paihuo") {
+              defaultBranchRef {name target {oid}}
+              issueTemplates {name about filename body labels(first:10) {nodes {name}}}
+              pullRequestTemplates {body}
+              boss: object(expression:"main:.github/ISSUE_TEMPLATE/boss.md") {... on Blob {text}}
+              bug: object(expression:"main:.github/ISSUE_TEMPLATE/bug.md") {... on Blob {text}}
+              followup: object(expression:"main:.github/ISSUE_TEMPLATE/followup.md") {... on Blob {text}}
+              pr: object(expression:"main:.github/PULL_REQUEST_TEMPLATE.md") {... on Blob {text}}
+            }
+          }
+          '@
+          $json = gh api graphql -f "query=$query"
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub template query failed' }
+          $repo = ($json | ConvertFrom-Json).data.repository
+          function Normalize([string]$value) {
+            (($value.Replace("`r", "") -split "`n" | ForEach-Object { $_.TrimEnd() }) -join "`n").Trim()
+          }
+          if ($repo.defaultBranchRef.name -cne 'main' -or @($repo.issueTemplates).Count -ne 3) { throw 'Wrong branch or number of issue templates' }
+          Write-Output ("Default branch {0} {1}" -f $repo.defaultBranchRef.name,$repo.defaultBranchRef.target.oid)
+          foreach ($name in 'boss','bug','followup') {
+            $candidates = @($repo.issueTemplates | Where-Object { [IO.Path]::GetFileName($_.filename) -ceq "$name.md" })
+            if ($candidates.Count -ne 1) { throw "Missing or duplicate template: $name" }
+            $template = $candidates[0]
+            $source = $repo.$name.text.Replace("`r","")
+            $head = [regex]::Match($source,'(?s)^---\n(.*?)\n---\n')
+            if (!$head.Success) { throw "Missing front matter: $name" }
+            $expectedName = [regex]::Match($head.Groups[1].Value,'(?m)^name: (.+)$').Groups[1].Value.Trim()
+            $expectedAbout = [regex]::Match($head.Groups[1].Value,'(?m)^about: (.+)$').Groups[1].Value.Trim()
+            $labels = @($template.labels.nodes | ForEach-Object { $_.name })
+            if ($template.name -cne $expectedName -or $template.about -cne $expectedAbout -or $labels.Count -ne 1 -or $labels[0] -cne $name) { throw "Incorrect metadata: $name" }
+            if ((Normalize $template.body) -cne (Normalize $source.Substring($head.Length))) { throw "Incorrect issue body: $name" }
+            Write-Output ("PASS {0}, name={1}, label={2}, body matches main" -f $name,$template.name,$labels[0])
+          }
+          if (@($repo.pullRequestTemplates).Count -ne 1 -or (Normalize $repo.pullRequestTemplates[0].body) -cne (Normalize $repo.pr.text)) { throw 'Incorrect PR defaults' }
+          $headings = [regex]::Matches($repo.pullRequestTemplates[0].body,'(?m)^## ').Count
+          if ($headings -ne 8) { throw 'Expected eight PR headings' }
+          Write-Output "PASS PR body matches main, headings=$headings"
