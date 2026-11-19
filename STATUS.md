@@ -16,7 +16,7 @@ Windows x64 桌面骨架启动本机内核，显示连接状态和版本。窗�
 | [T-002](tasks/T-002.md) | 存储层待集成，按 D-019 验证 SQLite 迁移与未归档会话唯一性。 |
 | [T-003](tasks/T-003.md) | Claude Code 离线验证待集成。 |
 | [T-004](tasks/T-004.md) | Codex 离线验证待集成。 |
-| [T-005](tasks/T-005.md) | 员工接口、假适配器和共用契约测试待集成。 |
+| [T-005](tasks/T-005.md) | 已交付员工接口、可配置的内存适配器、工厂型契约套件和接入说明。[PR #11](https://github.com/BiranSama/paihuo/pull/11) |
 
 ## 决定与待验
 
