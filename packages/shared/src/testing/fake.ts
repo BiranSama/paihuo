@@ -6,7 +6,7 @@ import {
   StaffAdapterError,
   type StartInput,
   type TurnInput,
-} from "../staff.ts";
+} from "@paihuo/shared/staff";
 
 export interface FakeScriptContext {
   ref: NativeSessionRef;

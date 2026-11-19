@@ -1,4 +1,6 @@
-export type RuntimeKind = "claude-code" | "codex" | "acp" | "native";
+import type { RuntimeKind } from "@paihuo/shared";
+
+export type { RuntimeKind } from "@paihuo/shared";
 
 export interface AdapterCapabilities {
   resume: boolean;

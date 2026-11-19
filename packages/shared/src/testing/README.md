@@ -1,6 +1,6 @@
 # T-006 / T-007 员工适配器接入契约测试
 
-适配器实现从 `@paihuo/shared/staff` 导入的 `StaffAdapter`。调度层或测试可从 `@paihuo/shared/testing` 导入 `FakeStaffAdapter`、`runStaffContract`。测试包不依赖 Vitest，也不会自行启动客户端。工作区的 `pnpm test` 会发现这里的离线用例。
+适配器实现从 `@paihuo/shared/staff` 导入的 `StaffAdapter`。调度层或测试可从 `@paihuo/shared/testing` 导入 `FakeStaffAdapter`、`runStaffContract`。测试包不依赖 Vitest，也不会自行启动客户端。工作区的 `pnpm test` 会发现这里的离线用例。调用方可以沿用工作区的 TypeScript `Bundler` 解析配置。Node.js 24 的 ESM 可直接加载这两个公开子入口。
 
 ## 给真实适配器接同一套断言
 
@@ -35,8 +35,18 @@ export function checkAdapter(
 
 - `turn` 会读完整条流，检查最后一条是唯一的 `turn_done`。默认测试输入要求回复一个随机标记。
 - `resume` 在休眠后继续使用原引用。T-006 和 T-007 的恢复验收须提供上例的 `recallInput` 或等效的回忆夹具，要求模型从原会话找回休眠前的随机标记。省略它时只检查恢复后能继续收发。
-- `guide`、`interrupt`、`parallel` 都需要一轮仍在运行。离线回放先发一段回复，再留出受控窗口。需要调整提示时传 `turnInput(marker, ongoing)`，普通轮次返回所给标记，长轮次先给标记并继续生成。接受引导后，同轮还应回复新标记。并行场景同时检查两条流各自的标记。
+- `guide`、`interrupt`、`parallel` 都需要一轮仍在运行。离线回放先发一段回复，再留出受控窗口。需要调整提示时传 `turnInput(marker, ongoing)`，普通轮次返回所给标记，长轮次先给标记并继续生成。接受引导后，同轮还应回复新标记。并行场景同时检查两条公开事件流各自的标记。默认结果中的 `parallel: "supported"` 表示在两条迭代器同时打开时未发现事件串线。底层是否同时执行需要传输层证据。
 - `images` 和 `nativeApproval` 根据声明验证图片投递或审批请求。声明不支持的引导返回 `{ accepted: false }`，其他不支持的操作抛出 `StaffAdapterError`，错误码为 `unsupported_capability`。七项全部通过后返回逐项结果，失败会抛出带场景名的错误。
+
+## 怎样验证底层并行
+
+声明支持并行时，T-006 和 T-007 应给模拟传输层配置屏障，并把 `assertParallelOverlap(first, second)` 传入 `runStaffContract`。
+
+1. 仅在 `parallel` 场景记录底层每个原生会话的下发和完成。A 底层发出首段文本后阻塞其完成通知。
+2. 契约读到 B 的首事件后调用探针。探针核对传输层已收到 B、A 仍在运行，再释放 A。A、B 均需正常完成并各自返回自己的标记。
+3. 在底层为屏障设置有限超时，超时要记录失败并释放 A。如果适配器先缓冲完 A 才公开首段，或等 A 结束才下发 B，探针必须报错。测试结束时清除定时器并释放屏障。`staff.test.ts` 中「传输层并行屏障检查」含流式与整轮缓冲的对照用例。
+
+真实客户端若没有可控的输出屏障，记录两条原生会话的开始、首事件和完成时间，在 B 首事件抵达时确认 A 尚未结束。无法取得这些原生观测时，记录公开流隔离已测、底层重叠待验。
 
 ## 在哪里运行
 

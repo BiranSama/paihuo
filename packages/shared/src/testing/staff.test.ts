@@ -129,6 +129,73 @@ describe("共用员工契约", () => {
     );
   });
 
+  it.each([false, true])("传输层并行屏障检查，整轮缓冲=%s", async (buffered) => {
+    const active = new Set<string>();
+    const sent = new Set<string>();
+    const release = Promise.withResolvers<void>();
+    const blocked = Promise.withResolvers<void>();
+    const timeout = 3000;
+    let expired = false;
+
+    // 底层第一轮给出首事件后，必须等 B 已下发才可结束。
+    async function* transport(
+      ref: NativeSessionRef,
+      input: TurnInput,
+    ): AsyncGenerator<AdapterEvent> {
+      const first = sent.size === 0;
+      sent.add(ref.nativeSession);
+      active.add(ref.nativeSession);
+      try {
+        yield { type: "text_delta", text: input.text };
+        if (first) {
+          blocked.resolve();
+          await release.promise;
+        }
+        yield completed;
+      } finally {
+        active.delete(ref.nativeSession);
+      }
+    }
+    class ObservedAdapter extends FakeStaffAdapter {
+      override async *send(ref: NativeSessionRef, input: TurnInput): AsyncGenerator<AdapterEvent> {
+        const source = transport(ref, input);
+        if (buffered) yield* await drain(source);
+        else yield* source;
+      }
+    }
+
+    vi.useFakeTimers();
+    const watchdog = setTimeout(() => {
+      expired = true;
+      release.resolve();
+    }, timeout);
+    try {
+      const run = runStaffContract(
+        (scenario) => (scenario === "parallel" ? new ObservedAdapter() : new FakeStaffAdapter()),
+        {
+          assertParallelOverlap: (a, b) => {
+            if (expired || !active.has(a.nativeSession) || !active.has(b.nativeSession)) {
+              throw new Error("B 的首事件未在 A 底层结束前到达");
+            }
+            release.resolve();
+          },
+        },
+      );
+      if (buffered) {
+        const failure = expect(run).rejects.toThrow("B 的首事件未在 A 底层结束前到达");
+        await blocked.promise;
+        await vi.advanceTimersByTimeAsync(timeout);
+        await failure;
+      } else {
+        expect((await run).parallel).toBe("supported");
+      }
+    } finally {
+      clearTimeout(watchdog);
+      release.resolve();
+      vi.useRealTimers();
+    }
+  });
+
   it("检出套用另一条会话回复的适配器", async () => {
     await expect(
       runStaffContract((scenario) => {

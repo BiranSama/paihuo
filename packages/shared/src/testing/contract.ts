@@ -5,7 +5,7 @@ import {
   StaffAdapterError,
   type StartInput,
   type TurnInput,
-} from "../staff.ts";
+} from "@paihuo/shared/staff";
 
 export type StaffContractCase =
   | "turn"
@@ -22,6 +22,11 @@ export interface StaffContractOptions {
   startInput?: (slot: "a" | "b") => StartInput;
   /** ongoing 场景须让第一条非终结事件抵达后留出控制窗口。 */
   turnInput?: (marker: string, ongoing: boolean) => TurnInput;
+  /** 两个首事件均已收到；由传输夹具检查底层两轮确实重叠，并释放屏障。 */
+  assertParallelOverlap?: (
+    first: NativeSessionRef,
+    second: NativeSessionRef,
+  ) => void | Promise<void>;
   /** 在真实适配器测试中指向一个有效的本机测试图片。 */
   imagePath?: string;
   /** 询问上一轮的标记；该输入不应包含标记本身。 */
@@ -234,6 +239,7 @@ const cases: Record<StaffContractCase, (fixture: ContractFixture) => Promise<Out
       const second = await f.start("b");
       check(first.nativeSession !== second.nativeSession, "并行会话共用了原生标识");
       return duringTurn<Outcome>(f.adapter, second, f.turn(right, true), async (finishSecond) => {
+        await f.options.assertParallelOverlap?.(first, second);
         const [a, b] = await Promise.all([finishFirst(), finishSecond()]);
         expectEnd(a, "completed");
         expectEnd(b, "completed");
