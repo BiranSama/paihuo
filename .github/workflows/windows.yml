@@ -1,0 +1,47 @@
+name: Windows
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check-test-build:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    env:
+      RUSTUP_TOOLCHAIN: 1.96.0
+    steps:
+      - name: 检出源代码
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: 准备 Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.3
+          package-manager-cache: false
+      - name: 准备 pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - name: 准备 Rust
+        run: rustup toolchain install 1.96.0 --profile minimal --component rustfmt --no-self-update
+      - name: 安装
+        run: pnpm install --frozen-lockfile
+      - name: 静态检查
+        run: pnpm check
+      - name: TypeScript 测试
+        run: pnpm test
+      - name: 构建 Windows 安装程序
+        run: pnpm build
+      - name: Rust 进程监督测试
+        run: cargo test --release --locked --manifest-path apps/desktop/src-tauri/Cargo.toml --features custom-protocol
+      - name: 记录安装程序大小和校验值
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem 'apps/desktop/src-tauri/target/release/bundle/nsis' -Filter '*-setup.exe'
+          if (@($installer).Count -ne 1) { throw '没有找到唯一的 Windows 安装程序' }
+          $installer | Select-Object Name, Length | Format-Table
+          Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256 | Select-Object Algorithm, Hash

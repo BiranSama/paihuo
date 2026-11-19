@@ -1,0 +1,22 @@
+{
+  "files": {
+    "includes": [
+      "biome.json",
+      "package.json",
+      "tsconfig.base.json",
+      "apps/**",
+      "packages/**",
+      "!**/build",
+      "!**/dist",
+      "!**/target",
+      "!**/gen",
+      "!**/node_modules"
+    ]
+  },
+  "formatter": {
+    "indentStyle": "space",
+    "lineWidth": 100
+  },
+  "linter": { "enabled": true },
+  "assist": { "enabled": true }
+}

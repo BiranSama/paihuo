@@ -1,0 +1,38 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "派活",
+  "version": "0.1.0",
+  "identifier": "com.biransama.paihuo",
+  "build": {
+    "beforeDevCommand": {
+      "script": "pnpm run prepare:dev",
+      "wait": false
+    },
+    "beforeBuildCommand": "pnpm run prepare:build",
+    "devUrl": "http://127.0.0.1:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": {
+        "default-src": "'self'",
+        "connect-src": "ipc: http://ipc.localhost ws://127.0.0.1:*",
+        "style-src": "'self'",
+        "base-uri": "'none'",
+        "frame-src": "'none'",
+        "object-src": "'none'"
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "nsis",
+    "icon": ["icons/icon.ico", "icons/icon.png"],
+    "resources": { "build/runtime/": "runtime/" },
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper", "silent": true },
+      "nsis": { "languages": ["SimpChinese", "English"] }
+    }
+  }
+}
