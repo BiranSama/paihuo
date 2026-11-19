@@ -4,7 +4,7 @@
 
 ## 一句话
 
-初始化 PR #1 已按独立评审结论合并。T-001 已领卡，正在实现第一个 Windows 桌面空壳。
+初始化 PR #1 已按独立评审结论合并。T-001 已领卡，本机内核首次通过六项测试，桌面壳与安装包正在验证。[开发 PR #6](https://github.com/BiranSama/paihuo/pull/6)
 
 ## 已完成
 
@@ -16,18 +16,18 @@
 ## 下一步
 
 1. T-001 工人建立工作区、桌面外壳和内核，验证 Windows 运行、异常恢复、鉴权和打包。[任务卡](tasks/T-001.md)
-2. 组长复核合并后 GitHub 的模板页面，记录选择入口、标签和 PR 正文预填结果。初始化分支保留在 `4358e83`，`main` 的合并提交为 `a850010`。[初始化 PR #1](https://github.com/BiranSama/paihuo/pull/1)
+2. GitHub 已识别模板，已从实际页面核实 boss、followup 正文及标签和 PR 八栏预填。缺陷表单与完整选择页仅有配置和服务端识别证据。初始化分支保留在 `4358e83`，`main` 的合并提交为 `a850010`。[初始化 PR #1](https://github.com/BiranSama/paihuo/pull/1)
 3. T-002 至 T-005 依赖 T-001。可并行准备存储约束、两个 harness 的验证项及员工接口契约。
 
 ## 待处理问题
 
 | 编号 | 问题与处理时机 |
 | --- | --- |
-| Q-009 | 同一场合可并存活跃和休眠两条会话，与 T-002 验收冲突。T-002 开始前处理。[Issue #2](https://github.com/BiranSama/paihuo/issues/2) |
-| Q-010 | 协作规则中的代码目录缺少创建时机说明。初始化保留空缺，T-001 按任务卡建目录。[Issue #3](https://github.com/BiranSama/paihuo/issues/3) |
+| Q-009 | 同一场合可并存活跃和休眠两条会话，与 T-002 验收冲突。D-019 已定义场合和唯一约束，T-002 同步设计并验证实现。[Issue #2](https://github.com/BiranSama/paihuo/issues/2) |
+| Q-010 | 协作规则中的代码目录缺少创建时机说明。已按 D-020 在目录树标明各卡的创建时机。[Issue #3](https://github.com/BiranSama/paihuo/issues/3) |
 | Q-011 | 第一期产物登记缺少存储和读取约定。编写相关任务卡前确定。[Issue #4](https://github.com/BiranSama/paihuo/issues/4) · [Discussion #5](https://github.com/BiranSama/paihuo/discussions/5) |
 
-Q-001 至 Q-006 继续按各自阶段待老板决定。Q-007、Q-008、Q-012 已解决。[问题清单](QUESTIONS.md)
+Q-001、Q-002、Q-004、Q-005、Q-006 按阶段待决定。Q-003、Q-007 至 Q-010、Q-012 已解决。[问题清单](QUESTIONS.md)
 
 ## 验证边界
 
