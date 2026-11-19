@@ -8,6 +8,8 @@ interface Migration {
 
 // 事务边界和数据库文件由迁移引擎持有。交给 SQLite 判断操作类别，含注释、别名和多语句。
 const blockedOperations = new Set([
+  // PRAGMA 可在事务内改变连接的锁模式，回滚数据也无法恢复内核独占权。
+  constants.SQLITE_PRAGMA,
   constants.SQLITE_TRANSACTION,
   constants.SQLITE_SAVEPOINT,
   constants.SQLITE_ATTACH,

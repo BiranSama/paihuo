@@ -169,6 +169,25 @@ test.each(["COMMIT", "END", "SAVEPOINT nested", "ATTACH ':memory:' AS other"])(
   },
 );
 
+test("迁移 SQL 不能解除连接的独占锁，回滚后其他连接仍然无法接管", () => {
+  const dir = directory();
+  const owner = inspect(dir);
+  owner.exec("PRAGMA locking_mode = EXCLUSIVE; BEGIN EXCLUSIVE; COMMIT");
+  const first = { version: 1, sql: "CREATE TABLE sample (id INTEGER)" };
+  const invalid = {
+    version: 2,
+    sql: "INSERT INTO sample VALUES (1); PRAGMA locking_mode = NORMAL",
+  };
+  expect(() => migrate(owner, [first, invalid])).toThrow(/not authorized/);
+  expect(owner.prepare("SELECT version FROM schema_migrations").all()).toEqual([{ version: 1 }]);
+  expect(owner.prepare("SELECT id FROM sample").all()).toEqual([]);
+  const contender = inspect(dir);
+  expect(() => contender.exec("BEGIN EXCLUSIVE")).toThrow(/database is locked/);
+  migrate(owner, [first, { version: 2, sql: "INSERT INTO sample VALUES (2)" }]);
+  owner.close();
+  expect(contender.prepare("SELECT id FROM sample").all()).toEqual([{ id: 2 }]);
+});
+
 test("同进程第二次开库失败，活动运行持续有效，持有者正常退出后可接管恢复", () => {
   const dir = directory();
   const owner = open(dir);
