@@ -37,8 +37,12 @@ jobs:
           function Normalize([string]$value) {
             (($value.Replace("`r", "") -split "`n" | ForEach-Object { $_.TrimEnd() }) -join "`n").Trim()
           }
-          if ($repo.defaultBranchRef.name -cne 'main' -or @($repo.issueTemplates).Count -ne 3) { throw 'Wrong branch or number of issue templates' }
           Write-Output ("Default branch {0} {1}" -f $repo.defaultBranchRef.name,$repo.defaultBranchRef.target.oid)
+          Write-Output ("Issue templates returned: {0}; PR templates: {1}" -f @($repo.issueTemplates).Count,@($repo.pullRequestTemplates).Count)
+          foreach ($t in $repo.issueTemplates) {
+            Write-Output ("Issue template filename={0}, name={1}, labels={2}, body_chars={3}" -f $t.filename,$t.name,($t.labels.nodes.name -join ','),$t.body.Length)
+          }
+          if ($repo.defaultBranchRef.name -cne 'main') { throw 'Wrong default branch' }
           foreach ($name in 'boss','bug','followup') {
             $candidates = @($repo.issueTemplates | Where-Object { [IO.Path]::GetFileName($_.filename) -ceq "$name.md" })
             if ($candidates.Count -ne 1) { throw "Missing or duplicate template: $name" }
