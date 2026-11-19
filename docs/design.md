@@ -119,7 +119,10 @@ sessions                         会话对照表
   prev_session_id TEXT NULL      接续链：上一条会话
   created_at      TEXT
   last_active_at  TEXT
-  UNIQUE (member_id, kind, scope_id, state) WHERE state != 'archived'
+
+-- D-019：场合由 kind 与 scope_id 共同标识，休眠仍占用该场合。
+CREATE UNIQUE INDEX sessions_current_scope
+  ON sessions(member_id, kind, scope_id) WHERE state != 'archived';
 
 messages
   id              TEXT PK
@@ -163,7 +166,7 @@ run_events                       工作记录（折叠展示用）
 第 2 期起增加 `pending_decisions`、`artifacts`；第 3 期起增加群相关字段和可见范围。
 增加表或字段必须走迁移文件，并在 `docs/log/` 留一条简报。
 
-### 5.2 成员文件目录【假设 Q-003】
+### 5.2 成员文件目录（D-019）
 
 ```
 <数据目录>/members/<member_id>/
