@@ -30,3 +30,7 @@ Claude Code 和 Codex 既要能当成员，也要能被成员一次性调用。�
 - 先做验证任务（T-003、T-004），确认在 Windows 上能启动、流式输出、恢复会话、中断；
   结果补充到本条。验证不通过则回到 `QUESTIONS.md`，不许硬写。
 - Clowder 已有这两条路线的实现（Claude 的 Windows 适配、Codex App Server 客户端），可作参考。
+
+### T-004 的 Windows 离线证据（2026-11-20）
+
+Codex CLI 0.167.0。本机导出的协议列有 8 个客户端请求、1 个客户端通知、6 个服务端通知和 2 种审批。6 条合成消息验证双会话与审批请求关联。App Server stdio 提供持续会话和轮次控制所需的协议；本轮没有启动服务器，握手、真实轮次、沙箱行为与原生资源占用待测。 [Issue #7](https://github.com/BiranSama/paihuo/issues/7) · [验证报告](../../packages/adapters/codex/README.md)
