@@ -22,6 +22,6 @@ Windows x64 桌面骨架启动本机内核，显示连接状态和版本。窗�
 
 ## 决定与待验
 
-- 初始化已用双父提交 `a850010` 合并，`chore/bootstrap` 保留。GitHub 上实见 boss、followup 的正文和预选标签，以及新建 PR 的八栏正文。缺陷模板和三项选择页的证据为默认分支配置与 GitHub 服务端识别，尚缺登录界面实测。[PR #1](https://github.com/BiranSama/paihuo/pull/1)
+- 初始化已用双父提交 `a850010` 合并，`chore/bootstrap` 保留。网页实见 boss、followup 的正文与预选标签及 PR 八栏正文。GitHub 服务端复核发现原名“缺陷”的第三个模板未列出，已改名“缺陷报告”。合并后的服务端逐项验收记录见[初始化 PR #1](https://github.com/BiranSama/paihuo/pull/1)。[修正简报](docs/log/2026-11-20-09-issue-template.md)
 - Q-003、Q-007 至 Q-010、Q-012 已解决。Q-011 的第一期产物登记约定须在 T-008、T-010、T-013 之前确定。[问题清单](QUESTIONS.md) · [Issue #4](https://github.com/BiranSama/paihuo/issues/4)
 - Q-001、Q-002、Q-004、Q-005、Q-006 仍待阶段性决定。D-018 限定两张客户端卡只做离线验证，真实会话行为和压缩后记忆需另行取证。[决定记录](DECISIONS.md) · [Issue #7](https://github.com/BiranSama/paihuo/issues/7)

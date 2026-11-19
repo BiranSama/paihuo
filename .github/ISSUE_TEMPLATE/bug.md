@@ -1,5 +1,5 @@
 ---
-name: 缺陷
+name: 缺陷报告
 about: 行为与需求、设计或预期不符
 labels: bug
 ---
