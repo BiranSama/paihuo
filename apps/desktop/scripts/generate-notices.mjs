@@ -72,6 +72,7 @@ async function javascriptNotices() {
     reactDom,
     dirname(requireReactDom.resolve("scheduler/package.json")),
     join(modules, "@tauri-apps", "api"),
+    join(modules, "vite"), // 生产页面含 Vite 的 modulepreload polyfill。
   ];
   return Promise.all(
     directories.map(async (directory) => {
@@ -145,6 +146,12 @@ async function rustNotices() {
 }
 
 const [javascript, rust] = await Promise.all([javascriptNotices(), rustNotices()]);
+const webview2 = await Promise.all(
+  ["LICENSE", "NOTICE"].map(async (kind) => {
+    const file = new URL(`./licenses/Microsoft-WebView2-${kind}.txt`, import.meta.url);
+    return `--- ${kind}.txt ---\n${await readFile(file, "utf8")}`;
+  }),
+);
 const notice = [
   "派活 · THIRD-PARTY NOTICES",
   "Node.js and ws license texts are installed in this directory as LICENSE-Node.js.txt and LICENSE-ws.txt.",
@@ -152,6 +159,9 @@ const notice = [
   ...javascript,
   `Windows x64 Rust production dependency graph (${rust.length})`,
   ...rust,
+  "Microsoft.Web.WebView2@1.0.3800.47 · WebView2LoaderStatic.lib",
+  "Source: https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.3800.47",
+  ...webview2,
 ].join("\n\n============================================================\n\n");
 
 await writeFile(join(runtime, "THIRD-PARTY-NOTICES.txt"), `${notice}\n`);
