@@ -9,8 +9,8 @@
   "scripts": {
     "dev": "pnpm --filter @paihuo/desktop run dev",
     "build": "pnpm --filter @paihuo/desktop run build",
-    "check": "biome ci . && pnpm -r run typecheck",
-    "format": "biome check --write .",
+    "check": "biome ci . && pnpm -r run typecheck && cargo fmt --check --manifest-path apps/desktop/src-tauri/Cargo.toml",
+    "format": "biome check --write . && cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml",
     "test": "vitest run"
   },
   "devDependencies": {

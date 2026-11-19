@@ -14,12 +14,35 @@
 
 ## 安装与运行
 
-等 T-001 完成后补充。届时这里会写明：需要预先安装什么、怎么启动开发版、怎么打包。
+### 开发版（Windows x64）
 
-计划中的运行条件：
+- Windows 10 或 11，已安装 Microsoft Edge WebView2 Runtime。
+- Node.js 24 LTS（x64）和 pnpm 11.9.0。安装步骤见 [Node.js](https://nodejs.org/en/download) 和 [pnpm](https://pnpm.io/installation)。
+- Rust 的 Windows MSVC 工具链和 Rustfmt（持续集成使用 1.96.0），以及 Visual Studio Build Tools 的「使用 C++ 的桌面开发」工作负载和 Windows SDK。详见 [Tauri 的 Windows 准备步骤](https://v2.tauri.app/start/prerequisites/#windows)。
 
-- Windows 10 或 11（首要平台）。Mac 在之后的阶段支持。
-- 至少安装并登录了一种 harness：Claude Code 或 Codex。派活使用你已有的登录，不另外提供模型。
+在仓库根目录打开 PowerShell：
+
+```powershell
+pnpm install --frozen-lockfile
+pnpm dev
+```
+
+窗口会显示「已连接」与「内核版本」。点窗口右上角的关闭按钮可隐藏窗口，后台继续运行。
+在 Windows 任务栏通知区域点派活图标可重新打开窗口，或者右键该图标，选择「退出」停止应用和内核。
+当前窗口只检查 PATH 中是否有 Claude Code 或 Codex；运行工程骨架无需登录。
+
+### 检查与打包
+
+```powershell
+pnpm check
+pnpm test
+pnpm build
+cargo test --release --locked --manifest-path apps/desktop/src-tauri/Cargo.toml --features custom-protocol
+```
+
+首次开发启动和首次构建会下载 Node.js 官方 Windows x64 运行时，并校验 SHA-256。
+NSIS 安装程序生成在 `apps/desktop/src-tauri/target/release/bundle/nsis/`。
+安装程序随附 Node.js 和编译后的内核，安装后的应用可以直接启动。若系统缺少 WebView2，安装程序会下载它。
 
 ## 文档导航
 

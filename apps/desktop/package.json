@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tauri dev",
-    "build": "tauri build --bundles nsis",
+    "build": "tauri build --bundles nsis -- --locked",
     "web:dev": "vite",
     "web:build": "vite build",
     "prepare:runtime": "pnpm --filter @paihuo/core run build && node scripts/prepare-runtime.mjs",

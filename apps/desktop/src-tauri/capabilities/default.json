@@ -1,0 +1,6 @@
+{
+  "identifier": "main-window",
+  "description": "允许主窗口查询本机内核连接状态",
+  "windows": ["main"],
+  "permissions": ["allow-core-status"]
+}
