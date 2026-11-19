@@ -1,11 +1,16 @@
-import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { mock } from "node:test";
 import { openStore } from "../index";
 
 // 仅由隔离测试 fork。父进程收到确认后强杀，本进程故意不调用 close。
 const dir = process.argv[2];
 if (!process.send || !dir) throw new Error("Expected IPC and temporary data directory");
+// 仅在夹具捕获开库所用连接，以便模拟持锁内核写到一半时被强杀。
+const tracker = mock.method(DatabaseSync.prototype, "prepare");
 const store = openStore(dir);
+const pending: unknown = tracker.mock.calls[0]?.this;
+tracker.mock.restore();
+if (!(pending instanceof DatabaseSync)) throw new Error("Missing owner database connection");
 store.messages.append({
   id: "committed",
   conversation_id: "chat",
@@ -26,9 +31,15 @@ for (const state of ["queued", "running", "unknown", "done", "cancelled", "faile
     end_reason: null,
   });
 }
-const pending = new DatabaseSync(join(dir, "paihuo.db"));
-pending.exec(
-  "BEGIN IMMEDIATE; INSERT INTO conversations VALUES ('uncommitted','dm','临时','time')",
-);
 process.once("disconnect", () => process.exit(1));
-process.send("committed-and-transaction-open");
+process.once("message", (command) => {
+  if (command !== "begin-pending") throw new Error("Unexpected parent command");
+  for (const state of ["queued", "running"]) {
+    if (store.runs.get(state)?.state !== state) throw new Error("Contender changed live run");
+  }
+  pending.exec(
+    "BEGIN IMMEDIATE; INSERT INTO conversations VALUES ('uncommitted','dm','临时','time')",
+  );
+  process.send?.("committed-and-transaction-open");
+});
+process.send("committed-and-idle");

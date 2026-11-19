@@ -1,10 +1,18 @@
-import type { DatabaseSync } from "node:sqlite";
+import { constants, type DatabaseSync } from "node:sqlite";
 import { initialMigration } from "../../migrations/001-initial";
 
 interface Migration {
   version: number;
   sql: string;
 }
+
+// 事务边界和数据库文件由迁移引擎持有。交给 SQLite 判断操作类别，含注释、别名和多语句。
+const blockedOperations = new Set([
+  constants.SQLITE_TRANSACTION,
+  constants.SQLITE_SAVEPOINT,
+  constants.SQLITE_ATTACH,
+  constants.SQLITE_DETACH,
+]);
 
 export function migrate(db: DatabaseSync, migrations: readonly Migration[] = [initialMigration]) {
   const ordered = [...migrations].sort((left, right) => left.version - right.version);
@@ -18,7 +26,7 @@ export function migrate(db: DatabaseSync, migrations: readonly Migration[] = [in
     }
   }
   for (const migration of ordered) {
-    // 先取得写锁，再核对已执行版本，两个开库进程也不会重复执行同一条迁移。
+    // 版本记录和本次 DDL/DML 在同一事务内提交。
     db.exec("BEGIN IMMEDIATE");
     try {
       db.exec("CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY) STRICT");
@@ -27,7 +35,14 @@ export function migrate(db: DatabaseSync, migrations: readonly Migration[] = [in
         throw new Error("Database migration history does not match this core");
       }
       if (!applied.some((row) => row.version === migration.version)) {
-        db.exec(migration.sql);
+        db.setAuthorizer((action) =>
+          blockedOperations.has(action) ? constants.SQLITE_DENY : constants.SQLITE_OK,
+        );
+        try {
+          db.exec(migration.sql);
+        } finally {
+          db.setAuthorizer(null);
+        }
         db.prepare("INSERT INTO schema_migrations (version) VALUES (?)").run(migration.version);
       }
       db.exec("COMMIT");
