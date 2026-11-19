@@ -16,7 +16,9 @@ Windows x64 桌面骨架启动本机内核，显示连接状态和版本。窗�
 | [T-002](tasks/T-002.md) | SQLite 八表、事务迁移、双向索引分页、独占开库与进程强杀恢复已验证。[PR #8](https://github.com/BiranSama/paihuo/pull/8) |
 | [T-003](tasks/T-003.md) | Claude Code 2.1.316 已在 Windows 验证本机命令与合成事件，真实会话待验。[PR #9](https://github.com/BiranSama/paihuo/pull/9) |
 | [T-004](tasks/T-004.md) | Codex CLI 0.167.0 已在 Windows 验证本机命令与合成事件，真实会话待验。[PR #10](https://github.com/BiranSama/paihuo/pull/10) |
-| [T-005](tasks/T-005.md) | 员工接口、假适配器和共用契约测试待集成。 |
+| [T-005](tasks/T-005.md) | 已交付员工接口、可配置的内存适配器、工厂型契约套件和接入说明。[PR #11](https://github.com/BiranSama/paihuo/pull/11) |
+
+组合工作树通过 46 项 Vitest（含 13 项存储、22 项员工接口、2 项离线客户端、9 项骨架），另有 Rust 核心进程生命周期回归。
 
 ## 决定与待验
 
