@@ -157,7 +157,7 @@ export interface StaffAdapter {
 | `work.updated` | 工作项状态变化 |
 | `request.created` | 出现一条需要老板确认的请求 |
 
-客户端完成 WebSocket 鉴权后，发送首个命令完成订阅初始化。现有桌面客户端以 `system.info` 开始；服务端先回首个成功命令的结果，再按序投递初始化期间暂存的事件。每条待初始化连接最多暂存 128 个事件、共 1 MiB；超限时以 1013 关闭连接。T-010 的事件格式为 `{event, data}`，超出字节预算的事件带 `truncated: true`。可用会话 ID 和 `seq` 游标回查私聊消息，用工作 ID 查询运行摘要。事件元数据本身超限时仅发送事件名、`data: null` 和截断标记。原生适配器的审批请求目前随 `run.event` 转发；`request.created` 已定义类型，待成员请求流程接入。
+客户端完成 WebSocket 鉴权后，发送首个命令完成订阅初始化。现有桌面客户端以 `system.info` 开始；服务端先回首个成功命令的结果，再按序投递初始化期间暂存的事件。每条待初始化连接最多暂存 128 个事件、共 1 MiB；超限时以 1013 关闭连接。T-010 的事件格式为 `{event, data}`，超出字节预算的事件带 `truncated: true`。可用 `conversationId` 和 `seq` 游标回查私聊消息，用工作 ID 查询运行摘要。事件元数据本身超限时仅发送事件名、`data: null` 和截断标记。原生适配器的审批请求目前随 `run.event` 转发；`request.created` 已定义类型，待成员请求流程接入。
 
 第 2 期起增加：`message.send` 的 `disposition`（`queue` | `guide` | `interrupt`）、
 `decision.*` 系列。第 3 期起增加群相关命令。新增或改动必须同步更新本文和 `packages/shared`。
