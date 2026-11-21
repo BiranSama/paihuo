@@ -386,7 +386,12 @@ export async function runCase(name, { connect, project, charge, sample }) {
     for (const client of clients) await client.close();
   }
   if (failure) throw failure;
+  for (const client of clients) client.checkReconnectTermination?.();
   summary.toolCalls = clients.reduce((n, c) => n + c.observed().toolCalls, 0);
+  summary.countedStreamReconnects = clients.reduce(
+    (n, c) => n + (c.observed().countedStreamReconnects ?? 0),
+    0,
+  );
   summary.latestCumulativeTokenTotalsByConnection = clients.map(
     (c) => c.observed().latestCumulativeTokenTotals,
   );
@@ -410,13 +415,27 @@ export function scenarioBaseArgs(flags) {
   ];
 }
 
-export async function nativeCase(name, exe, flags, env, project, remaining, record) {
+export async function nativeCase(
+  name,
+  exe,
+  flags,
+  env,
+  project,
+  remaining,
+  record,
+  allowReconnect = false,
+) {
+  requireThat(
+    !allowReconnect || (name === "image" && record),
+    "可选重连仅用于启用持久账本的图片场景。",
+  );
+  const limit = allowances[name] + Number(allowReconnect);
   requireThat(
     Object.hasOwn(allowances, name) && remaining >= allowances[name] + 1,
     "轮数不足，需保留本段完整上限和一个异常尝试。",
   );
   const base = scenarioBaseArgs(flags);
-  const open = (argv, tool = false) =>
+  const open = (argv, tool = false, reconnectCharge = null) =>
     openRpc(
       exe,
       [...argv, "app-server", "--listen", "stdio://"],
@@ -424,6 +443,7 @@ export async function nativeCase(name, exe, flags, env, project, remaining, reco
       appServerEnv(env),
       tool,
       name === "approval" ? join(project, "../denied/attempt.txt") : null,
+      reconnectCharge,
     );
   const probe = open(base);
   let names, before;
@@ -457,7 +477,7 @@ export async function nativeCase(name, exe, flags, env, project, remaining, reco
       ...opt(`mcp_servers.${serverName}.required`, true),
     );
   const connect = async () => {
-    const c = open(restricted, withTool);
+    const c = open(restricted, withTool, allowReconnect ? charge : null);
     try {
       await init(c);
       const read = await c.request("config/read", { includeLayers: false, cwd: project });
@@ -477,19 +497,20 @@ export async function nativeCase(name, exe, flags, env, project, remaining, reco
   };
   let used = 0;
   const marker = record
-    ? reserve(`codex-${name}`, { reserved: allowances[name], before: before.usedPercent })
+    ? reserve(`codex-${name}`, { reserved: limit, before: before.usedPercent })
     : null;
   let result, failure;
+  function charge() {
+    requireThat(used < limit, "超过本段原生动作上限。");
+    if (marker) appendFileSync(marker, "1\n");
+    used++;
+  }
   try {
     result = await runCase(name, {
       connect,
       project,
       sample: (pid) => sampleTree(pid, env, project),
-      charge() {
-        requireThat(used < allowances[name], "超过本段原生动作上限。");
-        if (marker) appendFileSync(marker, "1\n");
-        used++;
-      },
+      charge,
     });
   } catch (e) {
     failure = e;
@@ -506,7 +527,7 @@ export async function nativeCase(name, exe, flags, env, project, remaining, reco
   } finally {
     if (check) await check.close();
   }
-  closeLedger(used, allowances[name], before, after, failure, afterError);
+  closeLedger(used, limit, before, after, failure, afterError);
   const usage = {
     beforeUsedPercent: before.usedPercent,
     afterUsedPercent: after.usedPercent,

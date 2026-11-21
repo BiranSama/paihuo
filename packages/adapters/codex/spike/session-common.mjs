@@ -136,8 +136,9 @@ export function command(exe, args, cwd, env, input, timeout = 15000) {
   return { status: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
 }
 
-export function liveArgs(raw, smoke = false) {
+export function liveArgs(raw, smoke = false, imageCase = false) {
   const options = { exe: { type: "string" }, "policy-reviewed": { type: "boolean" } };
+  if (imageCase) options["allow-one-stream-reconnect"] = { type: "boolean" };
   if (smoke)
     Object.assign(options, {
       "before-used-percent": { type: "string" },

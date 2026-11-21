@@ -95,7 +95,80 @@ function startupCategory(bytes) {
     return "config-syntax";
   return "other-stderr";
 }
-export function openRpc(exe, args, cwd, env, allowFixedTool = false, approvalTarget = null) {
+// 只对一个已由请求、回复、启动通知三方确认的图片轮放行一次原生重连。
+// 即使还没收到 turn/start 回复，提前出现的任何可能输出也会封闭这道门。
+export function imageReconnectGate(charge) {
+  let threadId,
+    turnId,
+    startedId,
+    closed = false,
+    used = 0;
+  return {
+    submitted(id) {
+      if (threadId) closed = true;
+      threadId = id;
+    },
+    acknowledged(turn) {
+      turnId = turn?.id;
+      if ((turn?.items ?? []).some((item) => item.type !== "userMessage")) closed = true;
+    },
+    observe(method, p) {
+      if (!threadId || closed) return false;
+      if (method === "error") {
+        const info = p?.error?.codexErrorInfo;
+        const detail = info?.responseStreamDisconnected;
+        if (
+          used ||
+          !turnId ||
+          turnId !== startedId ||
+          p.threadId !== threadId ||
+          p.turnId !== turnId ||
+          p.willRetry !== true ||
+          !info ||
+          Object.keys(info).length !== 1 ||
+          !detail ||
+          typeof detail !== "object" ||
+          Array.isArray(detail) ||
+          Object.keys(detail).some((k) => k !== "httpStatusCode") ||
+          (detail.httpStatusCode != null && ![500, 502, 503, 504].includes(detail.httpStatusCode))
+        )
+          return false;
+        charge();
+        used++;
+        return true;
+      }
+      if (method === "turn/started") {
+        if (
+          startedId ||
+          p?.threadId !== threadId ||
+          typeof p?.turn?.id !== "string" ||
+          (p.turn.items ?? []).some((item) => item.type !== "userMessage")
+        )
+          closed = true;
+        else startedId = p.turn.id;
+      } else if (method === "item/started" || method === "item/completed") {
+        if (p?.item?.type !== "userMessage") closed = true;
+      } else if (method === "thread/tokenUsage/updated") {
+        const usage = p?.tokenUsage?.total;
+        if (usage?.outputTokens !== 0 || usage.reasoningOutputTokens !== 0) closed = true;
+      } else if (!["thread/status/changed", "mcpServer/startupStatus/updated"].includes(method)) {
+        closed = true;
+      }
+      return false;
+    },
+    count: () => used,
+  };
+}
+export function openRpc(
+  exe,
+  args,
+  cwd,
+  env,
+  allowFixedTool = false,
+  approvalTarget = null,
+  reconnectCharge = null,
+) {
+  const reconnect = reconnectCharge ? imageReconnectGate(reconnectCharge) : null;
   const child = spawn(exe, args, {
     cwd,
     env,
@@ -200,6 +273,8 @@ export function openRpc(exe, args, cwd, env, allowFixedTool = false, approvalTar
         const task = pending.get(frame.id);
         requireThat(task, "响应 ID 未匹配。");
         pending.delete(frame.id);
+        if (task.method === "turn/start" && !frame.error)
+          reconnect?.acknowledged(frame.result?.turn);
         if (task.method === "initialize" && typeof frame.result?.userAgent === "string") {
           initialized = true;
           startupBytes = Buffer.alloc(0);
@@ -237,6 +312,11 @@ export function openRpc(exe, args, cwd, env, allowFixedTool = false, approvalTar
               ? `/${kinds.has(frame.params.item.type) ? frame.params.item.type : "unknown-item"}`
               : ""),
         );
+      if (reconnect?.observe(frame.method, frame.params)) {
+        actions++;
+        trace.push("error/streamReconnectCounted");
+        return;
+      }
       if (frame.method === "error") {
         stop(
           new ProbeStop(`出现原生错误或重连通知，本次停止。${errorNotification(frame.params)}。`),
@@ -283,18 +363,23 @@ export function openRpc(exe, args, cwd, env, allowFixedTool = false, approvalTar
   return {
     trace,
     pid: child.pid,
+    checkReconnectTermination() {
+      if (reconnect && lastFailure) throw lastFailure;
+    },
     observed() {
       return {
         denied,
         compactions,
         toolCalls: toolsByTurn.size,
         latestCumulativeTokenTotals: [...latestTokenTotals.values()],
+        countedStreamReconnects: reconnect?.count() ?? 0,
       };
     },
     request(method, params = {}) {
       requireThat(methods.has(method), "RPC 不在允许集合。");
       if (["turn/start", "turn/steer", "turn/interrupt"].includes(method)) actions++;
       if (lastFailure) throw lastFailure;
+      if (method === "turn/start") reconnect?.submitted(params.threadId);
       const id = ++next;
       return new Promise((resolve, reject) => {
         pending.set(id, { method, resolve, reject });

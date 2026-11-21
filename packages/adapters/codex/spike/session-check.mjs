@@ -80,6 +80,7 @@ const stages = [
   "--offline scenarios",
   "--offline native-roster --exe PATH",
   "--live scenarios --case NAME --exe PATH --policy-reviewed --included-only --before-used-percent N --used-turns N",
+  "--live scenarios --case image --exe PATH --policy-reviewed --included-only --before-used-percent N --used-turns N --allow-one-stream-reconnect",
   "--live transport --exe PATH --policy-reviewed",
   "--live auth --exe PATH --policy-reviewed",
   "--live smoke --exe PATH --policy-reviewed --included-only --before-used-percent N --used-turns N",
@@ -277,6 +278,11 @@ async function main(args) {
       transportArgv: transportArgs,
       smokeArgv: execArgs,
       scenarioNativeActionLimits: allowances,
+      optionalImageReconnect: {
+        reservedActions: 2,
+        secondBatchActionBudget: 13,
+        totalIncludingFirstBatch: 14,
+      },
     };
   }
   if (args.length === 2 && args[0] === "--offline") {
@@ -311,7 +317,13 @@ async function main(args) {
     );
     [, scenario] = rest.splice(0, 2);
   }
-  const values = liveArgs(rest, stage === "smoke" || stage === "scenarios");
+  const values = liveArgs(rest, stage === "smoke" || stage === "scenarios", scenario === "image");
+  const allowReconnect = values["allow-one-stream-reconnect"] === true;
+  if (allowReconnect)
+    requireThat(
+      Number(values["used-turns"]) + 2 <= 14,
+      "首批1次加第二批最多13个动作，图片与一次重连需预留2个动作。",
+    );
   const exe = checkedExe(values.exe, "codex.exe");
   return withScratch(async (root, project) => {
     const env = cleanEnv(root, stage !== "transport");
@@ -340,6 +352,7 @@ async function main(args) {
         project,
         30 - Number(values["used-turns"]),
         true,
+        allowReconnect,
       );
     if (stage === "auth")
       return {

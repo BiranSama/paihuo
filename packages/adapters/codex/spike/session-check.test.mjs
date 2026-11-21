@@ -4,7 +4,7 @@ import { expect, it } from "vitest";
 import { summarizeClaude } from "../../claude-code/spike/session-check.mjs";
 import { offlineCases } from "./scenario-fixture.mjs";
 import { quotaSnapshot } from "./scenario-observations.mjs";
-import { errorNotification, openRpc } from "./scenario-rpc.mjs";
+import { errorNotification, imageReconnectGate, openRpc } from "./scenario-rpc.mjs";
 import {
   appServerEnv,
   closeLedger,
@@ -16,6 +16,129 @@ import {
 } from "./scenarios.mjs";
 import { execState, protocolState } from "./session-check.mjs";
 import { cleanEnv, liveArgs, ProbeStop, withScratch } from "./session-common.mjs";
+
+it("图片可选同轮重连只对精确的无输出瞬时断流生效，先记预算", () => {
+  const notice = (status) => ({
+    threadId: "t",
+    turnId: "u",
+    willRetry: true,
+    error: { codexErrorInfo: { responseStreamDisconnected: { httpStatusCode: status } } },
+  });
+  const started = { threadId: "t", turn: { id: "u" } };
+  const active = (charge = () => {}) => {
+    const gate = imageReconnectGate(charge);
+    gate.submitted("t");
+    gate.observe("turn/started", started);
+    gate.acknowledged({ id: "u" });
+    return gate;
+  };
+  for (const status of [null, undefined, 500, 502, 503, 504]) {
+    let charged = 0;
+    const gate = active(() => charged++);
+    expect(gate.observe("error", notice(status))).toBe(true);
+    expect(charged).toBe(1);
+    expect(gate.observe("error", notice(status))).toBe(false);
+    expect(charged).toBe(1);
+  }
+  const bad = [
+    ...[400, 401, 403, 429, 501, 505, "503"].map(notice),
+    { ...notice(null), threadId: "x" },
+    { ...notice(null), turnId: "x" },
+    { ...notice(null), willRetry: false },
+    { ...notice(null), willRetry: null },
+  ];
+  for (const info of [
+    "unauthorized",
+    { responseStreamConnectionFailed: {} },
+    { responseStreamDisconnected: null },
+    { responseStreamDisconnected: {}, other: {} },
+    { responseStreamDisconnected: { httpStatusCode: null, unreviewed: true } },
+  ])
+    bad.push({ ...notice(null), error: { codexErrorInfo: info } });
+  for (const p of bad) {
+    const gate = active();
+    expect(gate.observe("error", p)).toBe(false);
+    expect(gate.count()).toBe(0);
+  }
+  for (const [method, p] of [
+    ["item/agentMessage/delta", { delta: "x" }],
+    ["item/reasoning/summaryTextDelta", { delta: "x" }],
+    ["item/started", { item: { type: "reasoning" } }],
+    ["item/completed", { item: { type: "agentMessage" } }],
+    ["item/started", { item: { type: "mcpToolCall" } }],
+    ["turn/completed", started],
+    [
+      "thread/tokenUsage/updated",
+      { tokenUsage: { total: { outputTokens: 2, reasoningOutputTokens: 0 } } },
+    ],
+    ["future/unknown", {}],
+  ]) {
+    const gate = active();
+    gate.observe(method, p);
+    expect(gate.observe("error", notice(null))).toBe(false);
+  }
+  const unknown = imageReconnectGate(() => {});
+  unknown.submitted("t");
+  unknown.acknowledged({ id: "u" });
+  expect(unknown.observe("error", notice(null))).toBe(false);
+  expect(() =>
+    active(() => {
+      throw new Error("synthetic ledger failure");
+    }).observe("error", notice(null)),
+  ).toThrow("synthetic ledger failure");
+  const args = [
+    "--policy-reviewed",
+    "--before-used-percent",
+    "77",
+    "--used-turns",
+    "3",
+    "--included-only",
+    "--allow-one-stream-reconnect",
+  ];
+  expect(() => liveArgs(args, true)).toThrow();
+  expect(liveArgs(args, true, true)["allow-one-stream-reconnect"]).toBe(true);
+});
+
+it("跨进程合成图片断流默认停止，可选模式一次宿主提交后核对唯一终稿", async () => {
+  for (const [enabled, fixture] of [
+    [false, "disconnect-image"],
+    [true, "disconnect-image"],
+    [true, "repeat-after-final"],
+  ])
+    await withScratch(async (root, project) => {
+      let host = 0,
+        reconnects = 0;
+      const connect = async () => {
+        const c = openRpc(
+          process.execPath,
+          [
+            fileURLToPath(new URL("./scenario-fixture.mjs", import.meta.url)),
+            "--serve",
+            root,
+            fixture,
+          ],
+          project,
+          cleanEnv(root),
+          false,
+          null,
+          enabled ? () => reconnects++ : null,
+        );
+        await c.request("initialize");
+        c.initialized();
+        return c;
+      };
+      const result = runCase("image", { connect, project, charge: () => host++ });
+      if (enabled && fixture === "disconnect-image")
+        expect(await result).toMatchObject({
+          randomColorOrderMatched: true,
+          countedStreamReconnects: 1,
+          deltaMatchesFinal: true,
+        });
+      else await expect(result).rejects.toThrow(/responseStreamDisconnected/);
+      expect(host).toBe(1);
+      expect(reconnects).toBe(Number(enabled));
+    });
+});
 
 it("握手前退出只暴露固定错误类别和退出码", async () => {
   await withScratch(async (root, cwd) => {
