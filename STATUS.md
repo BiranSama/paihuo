@@ -1,6 +1,6 @@
 # 派活 · 现状快照
 
-更新于 2026-11-20。每张卡的验收记录在卡片和对应 PR 内，历史见 [开发简报](docs/log/)。
+更新于 2026-11-21。每张卡的验收记录在卡片和对应 PR 内，历史见 [开发简报](docs/log/)。
 
 ## 已可运行
 
@@ -17,11 +17,12 @@ Windows x64 桌面骨架启动本机内核，显示连接状态和版本。窗�
 | [T-003](tasks/T-003.md) | Claude Code 2.1.316 已在 Windows 验证本机命令与合成事件，真实会话待验。[PR #9](https://github.com/BiranSama/paihuo/pull/9) |
 | [T-004](tasks/T-004.md) | Codex CLI 0.167.0 已在 Windows 验证本机命令与合成事件，真实会话待验。[PR #10](https://github.com/BiranSama/paihuo/pull/10) |
 | [T-005](tasks/T-005.md) | 已交付员工接口、可配置的内存适配器、工厂型契约套件和接入说明。[PR #11](https://github.com/BiranSama/paihuo/pull/11) |
+| [T-008](tasks/T-008.md) | 内核调度已用假适配器通过 11 条验收及 9 项回归，待独立评审。私聊、任务排队与重启恢复已可供 T-010 接入。[PR #15](https://github.com/BiranSama/paihuo/pull/15) |
 
-组合工作树通过 46 项 Vitest（含 13 项存储、22 项员工接口、2 项离线客户端、9 项骨架），另有 Rust 核心进程生命周期回归。
+T-008 分支通过 66 项 Vitest 和工作区静态检查。T-010 负责连接桌面 WebSocket；真实 harness 验证见 T-015。
 
 ## 决定与待验
 
 - 初始化已用双父提交 `a850010` 合并，`chore/bootstrap` 保留。网页实见 boss、followup 的正文与预选标签及 PR 八栏正文。GitHub 服务端复核发现原名“缺陷”的第三个模板未列出，已改名“缺陷报告”。合并后的服务端逐项验收记录见[初始化 PR #1](https://github.com/BiranSama/paihuo/pull/1)。[修正简报](docs/log/2026-11-20-09-issue-template.md)
-- Q-003、Q-007 至 Q-010、Q-012 已解决。Q-011 的第一期产物登记约定须在 T-008、T-010、T-013 之前确定。[问题清单](QUESTIONS.md) · [Issue #4](https://github.com/BiranSama/paihuo/issues/4)
+- Q-003、Q-007 至 Q-010、Q-012 已解决。T-008 交付工作项状态与目录，产物登记仍由 Q-011 跟踪。Q-015 交给 T-009 确定常驻会话上限与空闲回收策略。[问题清单](QUESTIONS.md) · [Issue #4](https://github.com/BiranSama/paihuo/issues/4)
 - Q-001、Q-002、Q-004、Q-005、Q-006 仍待阶段性决定。D-018 限定两张客户端卡只做离线验证，真实会话行为和压缩后记忆需另行取证。[决定记录](DECISIONS.md) · [Issue #7](https://github.com/BiranSama/paihuo/issues/7)
