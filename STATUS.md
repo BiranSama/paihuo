@@ -18,8 +18,9 @@ Windows x64 桌面骨架启动本机内核，显示连接状态和版本。窗�
 | [T-004](tasks/T-004.md) | Codex CLI 0.167.0 已在 Windows 验证本机命令与合成事件，真实会话待验。[PR #10](https://github.com/BiranSama/paihuo/pull/10) |
 | [T-005](tasks/T-005.md) | 已交付员工接口、可配置的内存适配器、工厂型契约套件和接入说明。[PR #11](https://github.com/BiranSama/paihuo/pull/11) |
 | [T-008](tasks/T-008.md) | 内核调度已用假适配器通过 11 条验收及 9 项回归，独立评审已通过。私聊、任务排队与重启恢复已可供 T-010 接入。[PR #15](https://github.com/BiranSama/paihuo/pull/15) |
+| [T-010](tasks/T-010.md) | 本机 WebSocket 已接真实 SQLite 和调度，七个命令、双客户端事件和原生子进程入口已自测，待独立评审。[PR #18](https://github.com/BiranSama/paihuo/pull/18) |
 
-T-008 分支通过 66 项 Vitest 和工作区静态检查。T-010 负责连接桌面 WebSocket；真实 harness 验证见 T-015。
+T-010 分支通过 89 项 Vitest 和工作区静态检查。内存适配器用于测试；生产进程对缺失的真实适配器返回 ADAPTER_NOT_READY。真实 harness 验证见 T-015。
 
 ## 接下来的任务
 

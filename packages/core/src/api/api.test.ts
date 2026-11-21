@@ -202,6 +202,10 @@ test("参数、封包与未知方法分别回错误码，同一连接还能继�
   const f = await fixture();
   for (const [params, code] of [
     [
+      { method: "message.page", params: { conversationId: "c", direction: "sideways" } },
+      "INVALID_PARAMS",
+    ],
+    [
       { method: "message.page", params: { conversationId: "c", direction: "after", limit: 51 } },
       "INVALID_PARAMS",
     ],
