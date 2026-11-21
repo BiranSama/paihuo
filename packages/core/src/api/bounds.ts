@@ -5,6 +5,8 @@ import type {
   Message,
   MessagePage,
   MessageView,
+  WorkItem,
+  WorkView,
 } from "@paihuo/shared";
 import type { DispatchEvent } from "../dispatch";
 import { EVENT_BYTES, FRAME_BYTES, failure } from "./protocol";
@@ -31,6 +33,35 @@ export function clip(text: string, budget: number): string {
   return text.slice(0, low);
 }
 const pageBudget = FRAME_BYTES - 16 * 1024; // 预留回执 ID、对话标题和分页结构。
+
+export function catalogPage<Row, View extends { id: string }>(
+  rows: Row[],
+  limit: number,
+  project: (row: Row) => View,
+) {
+  const items: View[] = [];
+  let used = 2;
+  for (const row of rows) {
+    if (items.length === limit) break;
+    const item = project(row);
+    const size = Buffer.byteLength(JSON.stringify(item)) + 1;
+    if (used + size > pageBudget) {
+      if (!items.length) throw new RangeError("条目标识或元数据超过单帧上限");
+      break;
+    }
+    used += size;
+    items.push(item);
+  }
+  return { items, nextCursor: items.length < rows.length ? (items.at(-1)?.id ?? null) : null };
+}
+
+export function workView(work: WorkItem): WorkView {
+  const title = clip(work.title, 32 * 1024),
+    goal = clip(work.goal, 512 * 1024),
+    dir = clip(work.dir, 16 * 1024);
+  if (title === work.title && goal === work.goal && dir === work.dir) return work;
+  return { ...work, title, goal, dir, truncated: true };
+}
 export function pageOf(rows: Message[], direction: "before" | "after", limit: number): MessagePage {
   const entries: MessageView[] = [];
   let used = 2;

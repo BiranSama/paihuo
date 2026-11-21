@@ -71,7 +71,7 @@ async function main() {
       const core = await startCore({
         token: config.token,
         origin: config.origin,
-        api: createApi(store, dispatch, registry),
+        api: createApi(store, dispatch),
         systemInfo: () => ({
           version,
           dataDir: config.dataDir,

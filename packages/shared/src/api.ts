@@ -23,6 +23,17 @@ export type MemberActivity = "idle" | "working" | "sleeping";
 export interface MemberView
   extends Pick<Member, "id" | "name" | "title" | "salutation" | "runtime_kind" | "builtin"> {
   activity: MemberActivity;
+  truncated?: true;
+}
+export interface WorkView extends WorkItem {
+  truncated?: true;
+}
+export interface RunEventView extends RunEvent {
+  truncated?: true;
+}
+export interface ListParams {
+  cursor?: string;
+  limit?: number;
 }
 
 export interface MessageView extends Message {
@@ -42,7 +53,7 @@ interface MemberFields {
 }
 export interface ApiParams {
   "system.info": undefined;
-  "member.list": undefined;
+  "member.list": ListParams;
   "member.create": MemberFields;
   "member.update": { memberId: string } & Partial<MemberFields>;
   "member.archive": { memberId: string };
@@ -54,7 +65,7 @@ export interface ApiParams {
     limit?: number;
   };
   "message.send": { conversationId: string; text: string };
-  "work.list": undefined;
+  "work.list": ListParams;
   "work.get": { workId: string };
   "session.sleep": { sessionId: string };
   "session.wake": { sessionId: string };
@@ -64,16 +75,18 @@ export type ApiMethod = keyof ApiParams;
 export type ApiRequest<M extends ApiMethod = ApiMethod> = {
   [K in M]: { id: string; method: K } & (ApiParams[K] extends undefined
     ? { params?: Record<string, never> }
-    : { params: ApiParams[K] });
+    : K extends "member.list" | "work.list"
+      ? { params?: ListParams }
+      : { params: ApiParams[K] });
 }[M];
 export interface ApiResults {
   "system.info": SystemInfo;
-  "member.list": { members: MemberView[] };
+  "member.list": { members: MemberView[]; nextCursor: string | null };
   "conversation.open": { conversation: Conversation & { truncated?: true }; page: MessagePage };
   "message.page": MessagePage;
   "message.send": { accepted: true; messageId: string; runId: string; sessionId: string };
-  "work.list": { items: WorkItem[] };
-  "work.get": { work: WorkItem; events: RunEvent[] };
+  "work.list": { items: WorkView[]; nextCursor: string | null };
+  "work.get": { work: WorkView; events: RunEventView[]; notices: MessageView[] };
 }
 export type ApiErrorCode =
   | "INVALID_REQUEST"

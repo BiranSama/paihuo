@@ -65,7 +65,11 @@ class Client {
   }
   async call<M extends keyof ApiResults>(
     method: M,
-    ...args: ApiParams[M] extends undefined ? [] : [ApiParams[M]]
+    ...args: M extends "member.list" | "work.list"
+      ? [ApiParams[M]?]
+      : ApiParams[M] extends undefined
+        ? []
+        : [ApiParams[M]]
   ) {
     const id = crypto.randomUUID();
     const reply = await this.request({ id, method, params: args[0] }, id);
@@ -116,7 +120,7 @@ async function fixture(adapter = new FakeStaffAdapter()) {
     origin,
     token,
     systemInfo: () => info,
-    api: createApi(store, dispatch, registry),
+    api: createApi(store, dispatch),
   });
   cleanups.push(core.close);
   const client = await connect(core.port);
@@ -462,6 +466,36 @@ test("慢连接超过积压上限时只关闭该连接", async () => {
   sendFrame(f.client.socket, "test");
   await closed;
   expect((await other.call("system.info")).version).toBe("test");
+});
+
+test("成员更换大脑后续聊按原会话运行时，缺失原适配器返回未就绪且不落输入", async () => {
+  const f = await fixture();
+  const { conversation } = await f.client.call("conversation.open", { memberId: "m" });
+  await f.client.call("message.send", { conversationId: conversation.id, text: "建立原生会话" });
+  await f.client.event("run.ended");
+  f.store.members.update({ ...fixtureMember, runtime_kind: "codex" });
+  const next = await f.client.call("message.send", {
+    conversationId: conversation.id,
+    text: "沿用 native",
+  });
+  const old = f.store.sessions.get(next.sessionId);
+  expect(old?.runtime_kind).toBe("native");
+  await f.client.event("run.ended", (e) => e.data.runId === next.runId);
+  if (!old) throw new Error("缺少测试会话");
+  f.store.sessions.update({ ...old, runtime_kind: "codex" });
+  f.store.members.update(fixtureMember);
+  const fail = await f.client.request(
+    {
+      id: "missing-old",
+      method: "message.send",
+      params: { conversationId: conversation.id, text: "不应入队" },
+    },
+    "missing-old",
+  );
+  expect(fail).toMatchObject({ error: { code: "ADAPTER_NOT_READY" } });
+  expect(f.store.messages.dmAfter(conversation.id, undefined, 10).map((m) => m.body)).not.toContain(
+    "不应入队",
+  );
 });
 
 test("成员及工作列表按已发 ID 逐页读完，超大单项保留 ID 与截断标志，详情可读", async () => {

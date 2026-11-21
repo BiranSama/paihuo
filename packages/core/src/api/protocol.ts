@@ -20,16 +20,18 @@ interface Rules {
   optional?: Record<string, Rule>;
 }
 const fields = { name: text, title: text, runtimeKind: runtime, salutation: text };
+const pageLimit = (v: unknown) => typeof v === "number" && integer(v) && v >= 1 && v <= PAGE_SIZE;
+const listRules = { optional: { cursor: id, limit: pageLimit } };
 const rules: Record<ApiMethod, Rules> = {
   "system.info": {},
-  "member.list": {},
-  "work.list": {},
+  "member.list": listRules,
+  "work.list": listRules,
   "conversation.open": { required: { memberId: id } },
   "message.page": {
     required: { conversationId: id, direction: (v) => v === "before" || v === "after" },
     optional: {
       cursor: integer,
-      limit: (v) => typeof v === "number" && integer(v) && v >= 1 && v <= PAGE_SIZE,
+      limit: pageLimit,
     },
   },
   "message.send": { required: { conversationId: id, text } },

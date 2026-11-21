@@ -50,7 +50,16 @@ export async function startCore(options: {
     }
 
     sockets.handleUpgrade(request, socket, head, (connection) => {
-      connection.on("error", () => connection.terminate());
+      connection.on("error", (error) => {
+        // ws 已为超限文本启动 1009 关闭握手；提前销毁底层 socket 会让客户端只能收到 1006。
+        if (
+          "code" in error &&
+          error.code === "WS_ERR_UNSUPPORTED_MESSAGE_LENGTH" &&
+          connection.readyState === connection.CLOSING
+        )
+          return;
+        connection.terminate();
+      });
       connection.on("message", (data, isBinary) => {
         let message: unknown;
         try {

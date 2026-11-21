@@ -1,13 +1,13 @@
 import type { ApiReply, ApiRequest, MemberView, SystemInfo } from "@paihuo/shared";
-import type { AdapterRegistry, createDispatch } from "../dispatch";
+import { type createDispatch, MissingAdapterError } from "../dispatch";
 import type { Store } from "../store";
-import { clip, pageOf } from "./bounds";
+import { catalogPage, clip, pageOf, workView } from "./bounds";
 import { failure, PAGE_SIZE, parseRequest } from "./protocol";
 
 type Dispatch = ReturnType<typeof createDispatch>;
 type DomainRequest = Exclude<ApiRequest, { method: "system.info" }>;
 
-export function createApi(store: Store, dispatch: Dispatch, registry: AdapterRegistry) {
+export function createApi(store: Store, dispatch: Dispatch) {
   function page(
     conversationId: string,
     direction: "before" | "after",
@@ -22,23 +22,28 @@ export function createApi(store: Store, dispatch: Dispatch, registry: AdapterReg
     const { id } = request;
     switch (request.method) {
       case "member.list": {
-        const members: MemberView[] = [];
-        for (const memberId of store.dispatch.listMemberIds()) {
+        const { cursor, limit = PAGE_SIZE } = request.params ?? {};
+        const ids = store.dispatch.pageMemberIds(cursor, limit + 1);
+        const { items: members, nextCursor } = catalogPage(ids, limit, (memberId): MemberView => {
           const member = store.members.get(memberId);
-          if (member) {
-            const { id, name, title, salutation, runtime_kind, builtin } = member;
-            members.push({
-              id,
-              name,
-              title,
-              salutation,
-              runtime_kind,
-              builtin,
-              activity: dispatch.memberStatus(id),
-            });
-          }
-        }
-        return { id, result: { members } };
+          if (!member) throw new Error("缺少成员记录");
+          const name = clip(member.name, 32 * 1024),
+            title = clip(member.title, 256 * 1024),
+            salutation = clip(member.salutation, 16 * 1024);
+          const truncated =
+            name !== member.name || title !== member.title || salutation !== member.salutation;
+          return {
+            id: memberId,
+            name,
+            title,
+            salutation,
+            runtime_kind: member.runtime_kind,
+            builtin: member.builtin,
+            activity: dispatch.memberStatus(memberId),
+            ...(truncated ? { truncated: true as const } : {}),
+          };
+        });
+        return { id, result: { members, nextCursor } };
       }
       case "conversation.open": {
         const { memberId } = request.params;
@@ -60,20 +65,32 @@ export function createApi(store: Store, dispatch: Dispatch, registry: AdapterReg
         const memberId = store.dispatch.dmRecipient(conversationId);
         const member = memberId ? store.members.get(memberId) : undefined;
         if (member?.status !== "active") return failure(id, "NOT_FOUND", "私聊或在职成员不存在");
-        try {
-          registry.get(member.runtime_kind);
-        } catch {
-          return failure(id, "ADAPTER_NOT_READY", "该成员的运行时适配器尚未就绪");
-        }
         return { id, result: { accepted: true, ...dispatch.sendMessage(conversationId, text) } };
       }
-      case "work.list":
-        return { id, result: { items: store.dispatch.listWork() } };
+      case "work.list": {
+        const { cursor, limit = PAGE_SIZE } = request.params ?? {};
+        return {
+          id,
+          result: catalogPage(store.dispatch.pageWork(cursor, limit + 1), limit, workView),
+        };
+      }
       case "work.get": {
         const work = store.workItems.get(request.params.workId);
-        return work
-          ? { id, result: { work, events: store.dispatch.recentWorkEvents(work.id) } }
-          : failure(id, "NOT_FOUND", "工作项不存在");
+        if (!work) return failure(id, "NOT_FOUND", "工作项不存在");
+        const events = store.dispatch.recentWorkEvents(work.id).map((record) => {
+          const summary = clip(record.summary, 4096);
+          return summary === record.summary
+            ? record
+            : { ...record, summary, truncated: true as const };
+        });
+        return {
+          id,
+          result: {
+            work: workView(work),
+            events,
+            notices: store.dispatch.recentWorkNotices(work.id),
+          },
+        };
       }
       case "member.create":
       case "member.update":
@@ -100,6 +117,8 @@ export function handleMessage(
     if (!api) return failure(request.id, "CORE_NOT_READY", "内核接口尚未就绪");
     return api.handle(request);
   } catch (error) {
+    if (error instanceof MissingAdapterError)
+      return failure(request.id, "ADAPTER_NOT_READY", "该成员的运行时适配器尚未就绪");
     if (error instanceof RangeError)
       return failure(request.id, "RESPONSE_TOO_LARGE", "响应超过单帧上限");
     return failure(request.id, "INTERNAL_ERROR", "内核未能完成命令");
