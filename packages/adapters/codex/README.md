@@ -76,7 +76,7 @@ Q-004 建议维持现行的 A 设计，即接续为新会话并将摘要写入�
 
 ## T-015 真实会话
 
-2026-11-21，Windows 11 x64（10.0.26100），原生 Codex CLI 0.167.0。候选路线为 App Server stdio 与 `exec --json`。组长运行原生 `login status`，观察到 ChatGPT 登录并正常关闭 Windows Job，本步骤使用 0 模型轮。没有产生本次可归账的模型用量。App Server 传输和 exec 单轮是不同步骤。
+2026-11-21，Windows 11 x64（10.0.26100），原生 Codex CLI 0.167.0。候选路线为 App Server stdio 与 `exec --json`。组长运行原生 `login status`，观察到 ChatGPT 登录并正常关闭 Windows Job，本步骤使用 0 模型轮。随后组长按批准的预算向 exec 发出一次短消息（原生轮次预算记 1），收到控制器未接受的 item，立即停止，无可信终态、文本或工具执行结论。驱动没有重发。官方提供商底层可能重连，实际网络请求数未知。
 
 从项目根目录在 PowerShell 运行。默认或 `--plan` 打印两条路线、本次 native argv、12 项验收和六项能力记录。版本和协议字段的本机预检沿用 `offline-check.mjs`。
 
@@ -100,28 +100,58 @@ smoke 用 `exec --json` 向本地 CLI 发一条固定消息，仅接受一条原
 
 程序开始 smoke 前独占创建共享 Git 管理目录内的私有预留标记。一个 checkout 及其余 linked worktree 共享该预留。只写数字 1，不写账号或会话数据。任何已启动的失败都继续计入，驱动不会自动重发。每个原生步骤均在 Windows kill-on-close Job 内，新的临时目录在退出后按本次创建路径回收。[预算和进程管理](spike/session-common.mjs) · [Windows Job](spike/job.ps1)
 
-| 项目 | 当前结论和观察 | 对应命令或后续取证 |
-| --- | --- | --- |
-| 1 路线 | App Server、exec 原生入口及协议已通过静态预检；本次已验证现有登录。两路实际模型行为对照待验。 | `--live transport`、`--live smoke` |
-| 2 启动与前言 | 已实现临时目录及固定前言的单轮执行，实际回复待验。 | `--live smoke` 的独立 `developer_instructions` 与固定标记 |
-| 3 流式事件 | 合成交错增量、审批与终态通过。exec 的最终 item 不能证明 App Server 的文本增量或工具配对。 | `--offline protocol`、`--live smoke`、未来 App Server 通知 |
-| 4 恢复 | 零轮传输探针有无效 ID 分类，须明确指向 thread/session/rollout 不存在。成功恢复和跨进程暗号待验。 | `--live transport`；未来重启后 `thread/resume` |
-| 5 中断 | 协议有 `turn/interrupt`，实际回执、文件及会话后续可用性待验。 | 未来在临时会话中按原 turnId 中断并查终态 |
-| 6 引导 | 协议有 `turn/steer`，实际是否在同一轮发挥作用待验。 | 未来锁定 `expectedTurnId` 比对 |
-| 7 并行 | 合成 threadId 分流通过；两原生会话文件及事件隔离待验。 | `--offline protocol`；后续双临时项目并行 |
-| 8 权限 | 有协议与合成拒绝回执；未观察原生审批。Q-014 A 待验。 | 对隔离兄弟临时目录的写请求只答拒绝并核对结果 |
-| 9 成员工具 | 本机固定 MCP 服务 stdio 握手、发现、合法调用、拒绝不符参数均已验证。Codex 原生工具调用待验。 | `--offline mcp`；[固定 MCP 服务](spike/fixed-mcp.mjs) |
-| 10 计费与认证 | 真实 CLI 确认 ChatGPT 登录。该登录类别无法直接证明本次额度归属；测试前后数字和实际扣量待核实。 | `--live auth`，同一额度窗口的前后读数 |
-| 11 资源 | 已验证 Windows Job 关闭后合成后代确实退出。原生会话空闲、工作时的内存及结束回收待验。 | `--offline job`；后续只采样本次进程树 |
-| 12 压缩 | 认证检查为 0 模型轮，没有压缩观察。Q-004 保留。 | 后续正常短轮次被动观察，最多 30 轮 |
+| 项目          | 当前结论和观察                                                                                                                                                | 对应命令或后续取证                                         |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| 1 路线        | 已验证原生 ChatGPT 登录。首次 exec 尝试被控制器中止，App Server 的真实模型对照仍待验。                                                                        | `--live transport`、`--live smoke`                         |
+| 2 启动与前言  | 首次实际 exec 消息已发出，出现未识别的原生 item，未验证前言。                                                                                                 | `--live smoke` 的独立 `developer_instructions` 与固定标记  |
+| 3 流式事件    | 真实 exec 在未接受的 item 处停止，原始事件未保存，其类型、文本、工具活动均无法还原。合成对照已补脱敏类型记录。                                                | `--offline protocol`、`--live smoke`、未来 App Server 通知 |
+| 4 恢复        | 零轮传输探针有无效 ID 分类，须明确指向 thread/session/rollout 不存在。成功恢复和跨进程暗号待验。                                                              | `--live transport`；未来重启后 `thread/resume`             |
+| 5 中断        | 协议有 `turn/interrupt`，实际回执、文件及会话后续可用性待验。                                                                                                 | 未来在临时会话中按原 turnId 中断并查终态                   |
+| 6 引导        | 协议有 `turn/steer`，实际是否在同一轮发挥作用待验。                                                                                                           | 未来锁定 `expectedTurnId` 比对                             |
+| 7 并行        | 合成 threadId 分流通过；两原生会话文件及事件隔离待验。                                                                                                        | `--offline protocol`；后续双临时项目并行                   |
+| 8 权限        | 有协议与合成拒绝回执；未观察原生审批。Q-014 A 待验。                                                                                                          | 对隔离兄弟临时目录的写请求只答拒绝并核对结果               |
+| 9 成员工具    | 本机固定 MCP 服务 stdio 握手、发现、合法调用、拒绝不符参数均已验证。Codex 原生工具调用待验。                                                                  | `--offline mcp`；[固定 MCP 服务](spike/fixed-mcp.mjs)      |
+| 10 计费与认证 | 同一 10080 分钟窗口测试前已用 70%，测试后 71%。普通订阅额度可用，付费点数不可用，余额为零，老板确认自动充值关闭。此窗口由并发会话共享，单次实际用量无法归因。 | `--live auth`，同一额度窗口的前后读数                      |
+| 11 资源       | 已验证 Windows Job 关闭后合成后代确实退出。原生会话空闲、工作时的内存及结束回收待验。                                                                         | `--offline job`；后续只采样本次进程树                      |
+| 12 压缩       | 首批预算记 1，未观察到自然压缩。Q-004 保留。                                                                                                                  | 后续正常短轮次被动观察，最多 30 轮                         |
 
-| AdapterCapabilities | 真实支持状态 | 尚缺证据 |
-| --- | --- | --- |
-| `resume` | 待验 | 成功恢复并记得先前的暗号 |
-| `guide` | 待验 | 追加输入在本轮产生可辨识的效果 |
-| `interrupt` | 待验 | 原轮中断、文件保留情况、后续可发言 |
-| `parallel` | 待验 | 原生多会话并发及文件隔离 |
-| `images` | 待验 | 模型能识别合成图片内的标记 |
-| `nativeApproval` | 待验 | 原生审批、请求关联、程序拒绝及目标文件无变动 |
+| AdapterCapabilities | 真实支持状态 | 尚缺证据                                     |
+| ------------------- | ------------ | -------------------------------------------- |
+| `resume`            | 待验         | 成功恢复并记得先前的暗号                     |
+| `guide`             | 待验         | 追加输入在本轮产生可辨识的效果               |
+| `interrupt`         | 待验         | 原轮中断、文件保留情况、后续可发言           |
+| `parallel`          | 待验         | 原生多会话并发及文件隔离                     |
+| `images`            | 待验         | 模型能识别合成图片内的标记                   |
+| `nativeApproval`    | 待验         | 原生审批、请求关联、程序拒绝及目标文件无变动 |
 
 T-007 仍等关卡。App Server 保留为候选。应以实际控制活跃轮、审批及持久化的结果决定正式适配器；单轮 exec 的结果只能作为对照，无法据此给六项能力填布尔值。
+
+### 第二批 App Server 验证命令
+
+`--offline scenarios` 在 Node 实现的假 App Server 上实际收发 stdio 消息。另用同版本官方二进制的 `native-roster` 样例，在没有账号的临时配置里放置一个只写启动标记的 MCP。两次读取有效配置时分别看到该服务启用、禁用，均未触发标记；直接运行同一程序的阳性对照触发标记。只在本机回环的独立 Responses 模拟中，关闭 view_image、goals 和 experimental_request_user_input 后，技术员观察到发给模拟服务的工具清单为空。该模拟也观察到原生轮开始前可能出现模型元数据诊断。驱动仅接受已核实的固定版本、固定模型、固定原文和位置，其他未知项输出枚举类别并中止。首次真实 exec 究竟遇到哪种 item 仍未知。[受控场景](spike/scenarios.mjs) · [回环前置检查](spike/roster-fixture.mjs) · [执行事件定义](https://github.com/openai/codex/blob/rust-v0.167.0/codex-rs/exec/src/exec_events.rs)
+
+```powershell
+node $p --offline scenarios
+node $p --offline native-roster --exe $exe
+```
+
+下面各段用同一命令形态。将 `NAME` 替换成表内一个名称，每次执行一段。组长在每段执行前、结束后核对同一 10080 分钟窗口，串行更新 `$before` 和 `$spent`。原生程序开始前的配额快照必须显示零余额、无可用付费点数、未耗尽的原有额度。原生接口未返回普通额度许可时，组长须额外通过官方宿主确认前后均为可用，再以 `--included-only` 传入前置确认。不能据百分比推断许可。各段独占预留；首次 exec 不重跑。13 个原生动作加首批预留共 14 个。每段还为意外失败留出一轮余量，单个 harness 总上限为 30；记录每次 MCP 调用、原生拒绝及可见错误。官方内置 openai provider 不接受覆盖请求或流重试次数，驱动不自动重试。原生动作数和底层网络次数分别报告。[固定版 provider 合并规则](https://github.com/openai/codex/blob/rust-v0.167.0/codex-rs/model-provider-info/src/lib.rs#L739-L769) · [官方用量字段](https://github.com/openai/codex/blob/rust-v0.167.0/codex-rs/app-server-protocol/src/protocol/v2/account.rs#L323-L350)
+
+```powershell
+node $p --live scenarios --case NAME --exe $exe --policy-reviewed --included-only --before-used-percent $before --used-turns $spent
+```
+
+| NAME      | 原生动作上限 | 如何判断                                                                                                                                                                                                 |
+| --------- | -----------: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| steer     |            2 | 在 turn/started 后发送 steer。原 turnId 完成且唯一终稿变为新标记。                                                                                                                                       |
+| interrupt |            3 | 活动轮发 interrupt，观察 interrupted，再在同线程发新轮。当前严格只读，无已写文件样本。                                                                                                                   |
+| resume    |            2 | 用随机暗号启动唯一持久化测试线程，关闭服务器再重启、按原 ID 恢复。给出暗号后或中途失败均尝试仅归档本次已确认的线程。必要时用同样受限的连接再试一次归档。无法确认归档时明确记录可能残留一个原生测试会话。 |
+| parallel  |            2 | 两个临时 cwd 各放不同的随机标记。两个模型轮仅可调用无参数的本地固定工具，读取自己 cwd 的 fixture.txt。核对两个独立答复、工具调用、文件状态以及原生轮的时间区间是否重叠。                                 |
+| mcp       |            1 | 仅在本次进程启用固定返回文本的本地 stdio MCP。按 threadId、turnId、itemId 对齐真实开始、结束与结果。                                                                                                     |
+| approval  |            1 | 只启用 request_permissions，要求对测试根下兄弟目录指定文件申请写权限。宿主一律答空权限，核对申请范围、拒绝与文件仍不存在。禁止通用 shell 与实际写操作。若测试版本未产生请求，只记录未证实。              |
+| image     |            1 | 在内存随机排列四种色条，编码为 PNG 并随文字输入，期望唯一终稿按顺序答出四个字母。                                                                                                                        |
+| resources |            1 | 同一原生进程树在会话空闲和固定 MCP 短延迟工作中各采样工作集。按实测说明采样时是否仍在工作，Windows Job 关闭后复核已观察 PID 的残留数。                                                                   |
+
+每段开始前，驱动对老板默认 Codex home 执行 `initialize`、`initialized`、`config/read`，不创建线程。0.167.0 只支持 `cwd` 和 `includeLayers`，没有服务端按键选择。完整原生答复经本地进程内存，实际使用测试所需配置名称、启用状态和约束；不打印配置内容，不读取凭据文件，不把配置对象装入模型输入。确认后重启，逐一禁用先前服务，再检查有效配置及原生登录。固定 MCP 专段仅放行新登记的测试进程、固定参数和工具。发生意外权限、未知工具、计费或边界异常，整批暂停。单个应答未命中标记、引导错过活动轮等作为该项未证实，可在额度仍许可时继续其他已批场景。自然压缩只记录被动观察。[协议控制器](spike/scenario-rpc.mjs) · [固定版本配置读取参数](https://github.com/openai/codex/blob/rust-v0.167.0/codex-rs/app-server-protocol/src/protocol/v2/config.rs#L359-L378)
+
+每个 App Server 子进程单独设置 `CODEX_INTERNAL_APP_SERVER_REMOTE_CONTROL_DISABLED=1`，并传入 `analytics.enabled=false`，以及 exporter、metrics_exporter、trace_exporter 均为 none 的 OTEL 配置。固定版本的 `config/read` 可复核 14 项被禁用的特性。原生接口未投影 `tools.experimental_request_user_input.enabled`，该项由传入参数和上述独立本机 Responses 模拟取证。真实回包须同时符合模型、provider、审批模式、只读沙箱、临时线程标志和两个 cwd。失败或后置额度不可读时，保留原阶段原因、开始读数、缺失的后置读数及已提交动作；进程强制结束时可用本地独占预留复核保守计数。
