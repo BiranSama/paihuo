@@ -71,3 +71,57 @@ node packages/adapters/claude-code/spike/offline.mjs --synthetic-only
 - 在基线 `0a6cb2c` 的 Windows 隔离工作树执行 `pnpm test --reporter=verbose`，Vitest 自动发现 `offline.test.mjs`，3 个测试文件共 10 个用例通过。新增用例清空子进程的 PATH，检查 `--synthetic-only` 正常退出、无标准错误，并输出合成覆盖汇总。
 
 交付文件为本文和 `spike/offline.mjs`、`spike/synthetic-events.mjs`、`spike/offline.test.mjs`。运行现场数据仅保留汇总状态。
+
+## T-015 真实会话
+
+2026-11-21，Windows 11 x64（10.0.26100），原生 Claude Code 2.1.316。候选入口为原生 CLI 流式打印与 Agent SDK。组长执行本机认证检查时，原生 CLI 退出 1，返回未登录。未发送模型消息，模型轮数为 0。工作区没有安装 Agent SDK。项目当前无法核对这台机器经过程序化调用后的真实额度、流式增量或会话行为。
+
+本次真实验证已在登录预检处结束。以下 PowerShell 命令留作复核。`--plan` 以及省略参数时均只打印计划，包含 12 项取证结构、六个能力字段和真实 smoke 的完整 argv。`--offline mcp` 启动本地固定 MCP 小程序，`--offline job` 验证 Windows Job 会清理一个仍在运行的测试后代。版本与帮助检查沿用 T-003 的 `offline.mjs`。
+
+```powershell
+$p = 'packages/adapters/claude-code/spike/session-check.mjs'
+node $p --plan
+node $p --offline protocol
+node $p --offline mcp
+node $p --offline job
+```
+
+组长仅在老板审阅对应命令后执行下一段。`$exe` 为审阅过的本机原生程序绝对路径。`--policy-reviewed` 表示已经确认本次仍会生效的托管设置没有自定义 hooks、凭据或服务端点覆写。两个账号阶段只使用官方 CLI 的默认登录位置。原始认证输出仅在驱动进程内部解析。`$before` 为已记录的同一额度窗口已用百分比，`$spent` 为本卡该 harness 已使用的原生轮次，包括已发起而失败的尝试、可见重试及追加输入。仅在订阅剩余额度足、额外付费途径已关闭时使用 `--included-only`。缺数据、额度耗尽或未登录时停止。结束后再从同一窗口记录后值、单位、时间与是否发生重置，不把取整后读数未变解释成零消耗。
+
+```powershell
+node $p --live transport --exe $exe --policy-reviewed
+node $p --live auth --exe $exe --policy-reviewed
+node $p --live smoke --exe $exe --policy-reviewed --included-only --before-used-percent $before --used-turns $spent
+```
+
+transport 在新建的临时项目和空白配置中，只尝试随机不存在的恢复 ID。smoke 在新的临时目录，用固定中文前言和一个短输入请求固定标记，组合使用 `--safe-mode`、`--restricted`、空内置工具清单、禁 MCP、拒绝权限、单原生轮、禁重试和禁会话持久化。每次只允许一侧一个 smoke，从共享 Git 管理目录以独占创建的方式预留一轮，失败也保留预留。清除预留需要组长先核对累计用量。所有本机子进程在 Windows Job 内运行。驱动仅输出筛选后的结论，不写原始响应、会话 ID 或账户信息。[驱动](spike/session-check.mjs) · [官方 CLI 参数](https://code.claude.com/docs/en/cli-reference) · [重试与环境变量](https://code.claude.com/docs/en/env-vars)
+
+| 项目          | 当前结论和观察                                                                                             | 对应命令或后续取证                            |
+| ------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| 1 路线        | 未满足完整对照。CLI 2.1.316 返回未登录，项目未安装 SDK。没有建立真实模型会话。                             | --live auth；SDK/CLI 候选入口见本章命令。     |
+| 2 启动与前言  | 未满足。无实际模型消息，工作目录及前言效果未经确认。                                                       | --live smoke 的固定标记。                     |
+| 3 流式事件    | 未满足。真实文本增量、终稿和工具开始／结束均未观察到。                                                     | --offline protocol 仅提供合成映射。           |
+| 4 恢复        | 未满足。真实暗号记忆、跨进程恢复与错误映射均未验证。                                                       | --live transport 提供无效 ID 的独立检查。     |
+| 5 中断        | 未满足。未发起真实中断，进程状态、文件保留及后续发言未知。                                                 | 候选路径为 SDK interrupt()。                  |
+| 6 引导        | 未满足。未发起真实引导，无法核实活动轮和下一轮的行为。                                                     | 需要比较同一原生轮中追加输入的效果。          |
+| 7 并行        | 未满足。未发起真实并行会话，无法核实事件和文件隔离。                                                       | --offline protocol 的合成分流。               |
+| 8 权限        | 未满足。未发起真实审批，Q-014 A 的原生效果未知。                                                           | 受限启动参数和合成拒绝见驱动。                |
+| 9 成员工具    | 未满足。固定本机 MCP 独立往返已验，未获得真实模型调用证据。                                                | --offline mcp。                               |
+| 10 计费与认证 | 已满足依据记录。本机原生认证返回未登录，实际模型轮数 0。测试前、后额度数字均未取得，实际额度归属无法确认。 | --live auth；官方认证及程序化使用链接见本章。 |
+| 11 资源       | 未满足。无实际持续会话可测空闲和工作内存。                                                                 | --offline job 只验证合成后代回收。            |
+| 12 压缩       | 已满足观察记录。0 模型轮，未观察到压缩，Q-004 留待以后。                                                   | 原生认证结果及本次轮数。                      |
+
+上表中的离线样例和分段命令用于复核证据范围。[原生分段驱动](spike/session-check.mjs) · [合成协议与接口对照](spike/offline.mjs) · [本机认证留档](../../../docs/log/2026-11-21-04-real-session-preflight.md)
+
+原生订阅登录、程序化使用的额度归属、将 Claude 登录用于第三方产品是三个不同问题。裸模式会跳过订阅 OAuth，因此这里使用受限模式和安全模式。产品集成阶段仍须按调用主体核对官方认证条件。[程序化运行](https://code.claude.com/docs/en/headless) · [认证与条款](https://code.claude.com/docs/en/legal-and-compliance)
+
+| AdapterCapabilities | 真实支持状态 | 缺失的原生证据               |
+| ------------------- | ------------ | ---------------------------- |
+| `resume`            | 待验         | 按 ID 跨进程继续并记得暗号   |
+| `guide`             | 待验         | 同轮收到并执行追加输入       |
+| `interrupt`         | 待验         | 可归因的中断终态及下一轮     |
+| `parallel`          | 待验         | 双会话并发及文件隔离         |
+| `images`            | 待验         | 收到合成图片并答出图内标记   |
+| `nativeApproval`    | 待验         | 宿主收到并拒绝匹配的原生请求 |
+
+**T-006 当前环境不开工。** 本机缺少可用的现有订阅登录，六项真实能力均无法判定。待正常订阅登录可用并能取得稳定的原生流后，再比较 CLI 与 SDK 的真实行为。额度前后数字未取得，本次 0 模型轮。当前没有实测依据要求修改接口。
