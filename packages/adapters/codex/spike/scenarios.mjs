@@ -18,6 +18,18 @@ export const allowances = {
   resources: 1,
 };
 const model = "gpt-6.2-sol";
+export function secondBatchReservation(name, spent, allowReconnect = false) {
+  requireThat(
+    Object.hasOwn(allowances, name) &&
+      (!allowReconnect || name === "image") &&
+      Number.isInteger(spent) &&
+      spent >= 0,
+    "本批场景或累计动作无效。",
+  );
+  const reserved = allowances[name] + Number(allowReconnect);
+  requireThat(spent + reserved <= 14, "首批1次加第二批最多13个动作，剩余预算不足以覆盖本场景。");
+  return reserved;
+}
 export const disabledFeatures = [
   "shell_tool",
   "code_mode",
@@ -429,7 +441,7 @@ export async function nativeCase(
     !allowReconnect || (name === "image" && record),
     "可选重连仅用于启用持久账本的图片场景。",
   );
-  const limit = allowances[name] + Number(allowReconnect);
+  const limit = secondBatchReservation(name, 30 - remaining, allowReconnect);
   requireThat(
     Object.hasOwn(allowances, name) && remaining >= allowances[name] + 1,
     "轮数不足，需保留本段完整上限和一个异常尝试。",

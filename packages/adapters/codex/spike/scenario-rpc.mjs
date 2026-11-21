@@ -192,6 +192,7 @@ export function openRpc(
   const toolsByTurn = new Set();
   const latestTokenTotals = new Map();
   let initialized = false;
+  let exitStatus;
   let startupBytes = Buffer.alloc(0);
   child.stderr.on("data", (chunk) => {
     if (!initialized && startupBytes.length < 8192)
@@ -209,6 +210,7 @@ export function openRpc(
   const exited = new Promise((resolve) =>
     child.on("close", (code) => {
       closed = true;
+      exitStatus = code;
       if (pending.size || waiters.size) {
         const diagnostic = initialized
           ? ""
@@ -364,7 +366,12 @@ export function openRpc(
     trace,
     pid: child.pid,
     checkReconnectTermination() {
-      if (reconnect && lastFailure) throw lastFailure;
+      if (!reconnect) return;
+      if (lastFailure) throw lastFailure;
+      requireThat(
+        closed && exitStatus === 0,
+        `图片场景收尾未通过：原生进程关闭 exit=${Number.isInteger(exitStatus) ? exitStatus : "unknown"}，清理异常，场景能力未确认。`,
+      );
     },
     observed() {
       return {

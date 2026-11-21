@@ -143,7 +143,7 @@ node $p --offline native-roster --exe $exe
 node $p --live scenarios --case NAME --exe $exe --policy-reviewed --included-only --before-used-percent $before --used-turns $spent
 ```
 
-图片场景另有一条待单独批准的命令。它预留 2 个动作，只提交一次原生 `turn/start`。如果原生服务通知将重连，控制器会先把这次可见重连追加到本地持久账本，再继续读取原来的流。需同时核对原线程和轮次、启动回执、此前无模型文本、推理或工具活动。只接受精确的 `responseStreamDisconnected`、`willRetry=true`，HTTP 状态须缺省或为 500、502、503、504。遇到再次断流、401、403、429、未知事件后无法确认是否已有输出、或计量条件变化，停止。最终仍须由同一轮返回唯一且能识别随机构图的答案。第二批合计最多 13 个新增动作，含这次可能发生的重连。组长据实际累计缩减后续场景，两批合计最多 14 个动作。该路径目前仅通过离线合成回归。
+图片场景另有一条待单独批准的命令。它预留 2 个动作，只提交一次原生 `turn/start`。如果原生服务通知将重连，控制器会先把这次可见重连追加到本地持久账本，再继续处理原来的流。宿主无法控制原生客户端开始网络重连的时机，底层实际请求数仍未知。需同时核对原线程和轮次、启动回执、此前无模型文本、推理或工具活动。只接受精确的 `responseStreamDisconnected`、`willRetry=true`，HTTP 状态须缺省或为 500、502、503、504。遇到再次断流、401、403、429、未知事件后无法确认是否已有输出、或计量条件变化，停止。最终仍须由同一轮返回唯一且能识别随机构图的答案。第二批合计最多 13 个新增动作，含这次可能发生的重连。每个第二批场景都会在启动前用当前累计加上该段上限，与两批合计 14 个动作核对。剩余动作不足以覆盖整个场景时停止，组长据实缩减后续场景。该路径目前仅通过离线合成回归。
 
 ```powershell
 node $p --live scenarios --case image --exe $exe --policy-reviewed --included-only --before-used-percent $before --used-turns $spent --allow-one-stream-reconnect

@@ -10,12 +10,31 @@ import {
   closeLedger,
   disabledFeatures,
   runCase,
+  secondBatchReservation,
   telemetrySettings,
   verifyPolicy,
   verifyRoster,
 } from "./scenarios.mjs";
 import { execState, protocolState } from "./session-check.mjs";
 import { cleanEnv, liveArgs, ProbeStop, withScratch } from "./session-common.mjs";
+
+it("第二批每个普通场景与可选图片均按整段上限拒绝超额", () => {
+  for (const [name, limit] of Object.entries({
+    steer: 2,
+    interrupt: 3,
+    resume: 2,
+    parallel: 2,
+    mcp: 1,
+    approval: 1,
+    image: 1,
+    resources: 1,
+  })) {
+    expect(secondBatchReservation(name, 14 - limit)).toBe(limit);
+    expect(() => secondBatchReservation(name, 15 - limit)).toThrow(/剩余预算不足/);
+  }
+  expect(secondBatchReservation("image", 12, true)).toBe(2);
+  expect(() => secondBatchReservation("image", 13, true)).toThrow(/剩余预算不足/);
+});
 
 it("图片可选同轮重连只对精确的无输出瞬时断流生效，先记预算", () => {
   const notice = (status) => ({
@@ -104,6 +123,7 @@ it("跨进程合成图片断流默认停止，可选模式一次宿主提交后�
     [false, "disconnect-image"],
     [true, "disconnect-image"],
     [true, "repeat-after-final"],
+    [true, "exit-after-final"],
   ])
     await withScratch(async (root, project) => {
       let host = 0,
@@ -134,6 +154,8 @@ it("跨进程合成图片断流默认停止，可选模式一次宿主提交后�
           countedStreamReconnects: 1,
           deltaMatchesFinal: true,
         });
+      else if (fixture === "exit-after-final")
+        await expect(result).rejects.toThrow(/关闭 exit=9.*清理异常/);
       else await expect(result).rejects.toThrow(/responseStreamDisconnected/);
       expect(host).toBe(1);
       expect(reconnects).toBe(Number(enabled));

@@ -131,7 +131,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url) && process.argv[2] === "-
             willRetry: true,
             error: { codexErrorInfo: { responseStreamDisconnected: { httpStatusCode: null } } },
           });
-        if (["disconnect-image", "repeat-after-final"].includes(process.argv[4])) disconnect();
+        if (
+          ["disconnect-image", "repeat-after-final", "exit-after-final"].includes(process.argv[4])
+        )
+          disconnect();
         const png = Buffer.from(p.input[1].url.split(",")[1], "base64");
         const values = inflateSync(png.subarray(41, 41 + png.readUInt32BE(33)));
         const names = { "255,0,0": "R", "0,200,0": "G", "0,0,255": "B", "255,255,0": "Y" };
@@ -139,6 +142,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url) && process.argv[2] === "-
           .map((x) => names[Array.from(values.subarray(1 + 3 * x, 4 + 3 * x)).join(",")])
           .join("");
         finish(t, u, letters);
+        if (process.argv[4] === "exit-after-final") process.exitCode = 9;
         if (process.argv[4] === "repeat-after-final") disconnect();
       } else if (text.startsWith("Use request_permissions")) {
         approval = { t, u };

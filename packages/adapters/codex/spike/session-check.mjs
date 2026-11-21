@@ -12,6 +12,7 @@ import {
   appServerEnv,
   disabledFeatures,
   nativeCase,
+  secondBatchReservation,
   telemetrySettings,
 } from "./scenarios.mjs";
 import {
@@ -319,11 +320,7 @@ async function main(args) {
   }
   const values = liveArgs(rest, stage === "smoke" || stage === "scenarios", scenario === "image");
   const allowReconnect = values["allow-one-stream-reconnect"] === true;
-  if (allowReconnect)
-    requireThat(
-      Number(values["used-turns"]) + 2 <= 14,
-      "首批1次加第二批最多13个动作，图片与一次重连需预留2个动作。",
-    );
+  if (scenario) secondBatchReservation(scenario, Number(values["used-turns"]), allowReconnect);
   const exe = checkedExe(values.exe, "codex.exe");
   return withScratch(async (root, project) => {
     const env = cleanEnv(root, stage !== "transport");
