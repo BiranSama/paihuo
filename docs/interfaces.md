@@ -143,7 +143,7 @@ export interface StaffAdapter {
 
 成员管理、休眠唤醒、答复待确认请求在参数合法时返回 `NOT_IMPLEMENTED`，分别由 T-012、T-009、T-013 接续。未知方法返回 `UNKNOWN_METHOD`，参数错误返回 `INVALID_PARAMS`。这些错误保留连接。
 
-WebSocket 单帧上限为 1 MiB，发送消息正文上限为 16 KiB，单个推送事件上限为 64 KiB。分页同时遵守行数和字节限制。单条历史消息的正文超过页预算时，通过 `truncated: true` 标明截短，数据库保留原文。
+一条完整 WebSocket 消息的上限为 1 MiB，发送消息正文上限为 16 KiB，单个推送事件上限为 64 KiB。分页同时遵守行数和字节限制。单条历史消息的正文超过页预算时，通过 `truncated: true` 标明截短，数据库保留原文。
 
 ### 2.2 事件（第 1 期）
 
@@ -157,7 +157,7 @@ WebSocket 单帧上限为 1 MiB，发送消息正文上限为 16 KiB，单个推
 | `work.updated` | 工作项状态变化 |
 | `request.created` | 出现一条需要老板确认的请求 |
 
-客户端完成 WebSocket 鉴权后，发送首个命令完成订阅初始化。现有桌面客户端以 `system.info` 开始；服务端先回首个成功命令的结果，再按序投递初始化期间暂存的事件。每条待初始化连接最多暂存 128 个事件、共 1 MiB；超限时以 1013 关闭连接。T-010 的事件格式为 `{event, data}`，超出字节预算的事件带 `truncated: true`。保留的消息或运行 ID 可用于后续查询。原生适配器的审批请求目前随 `run.event` 转发；`request.created` 已定义类型，待成员请求流程接入。
+客户端完成 WebSocket 鉴权后，发送首个命令完成订阅初始化。现有桌面客户端以 `system.info` 开始；服务端先回首个成功命令的结果，再按序投递初始化期间暂存的事件。每条待初始化连接最多暂存 128 个事件、共 1 MiB；超限时以 1013 关闭连接。T-010 的事件格式为 `{event, data}`，超出字节预算的事件带 `truncated: true`。可用会话 ID 和 `seq` 游标回查私聊消息，用工作 ID 查询运行摘要。事件元数据本身超限时仅发送事件名、`data: null` 和截断标记。原生适配器的审批请求目前随 `run.event` 转发；`request.created` 已定义类型，待成员请求流程接入。
 
 第 2 期起增加：`message.send` 的 `disposition`（`queue` | `guide` | `interrupt`）、
 `decision.*` 系列。第 3 期起增加群相关命令。新增或改动必须同步更新本文和 `packages/shared`。
