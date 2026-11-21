@@ -45,7 +45,9 @@ export function catalogPage<Row, View extends { id: string }>(
     if (items.length === limit) break;
     const item = project(row);
     const size = Buffer.byteLength(JSON.stringify(item)) + 1;
-    if (used + size > pageBudget) {
+    const cursorBytes =
+      items.length + 1 < rows.length ? Buffer.byteLength(JSON.stringify(item.id)) : 0;
+    if (used + size + cursorBytes > pageBudget) {
       if (!items.length) throw new RangeError("条目标识或元数据超过单帧上限");
       break;
     }

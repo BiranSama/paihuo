@@ -562,6 +562,20 @@ test("成员及工作列表按已发 ID 逐页读完，超大单项保留 ID 与
   expect(f.store.workItems.get("r-000")?.goal.length).toBe(huge.length);
 });
 
+test("数据库返回的长主键可用于下一页，回执 ID 继续限制为 128 字符", async () => {
+  const f = await fixture();
+  const long = "a".repeat(200);
+  f.store.members.insert({ ...fixtureMember, id: long });
+  const first = await f.client.call("member.list", { limit: 1 });
+  expect(first.nextCursor).toBe(long);
+  const next = await f.client.call("member.list", { cursor: long });
+  expect(next.members.map((m) => m.id)).toEqual(["m"]);
+  expect(await f.client.request({ id: long, method: "member.list" }, null)).toMatchObject({
+    id: null,
+    error: { code: "INVALID_REQUEST" },
+  });
+});
+
 test("初始化积压超过 128 个事件时明确通知该客户端重连，已就绪客户端继续收到完整轮次", async () => {
   const f = await fixture(
     new FakeStaffAdapter({

@@ -8,7 +8,8 @@ export const TEXT_BYTES = 16 * 1024;
 function object(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-const id = (v: unknown) => typeof v === "string" && v.trim().length > 0 && v.length <= 128;
+// 请求 ID 沿用旧客户端的 128 字符限制。数据库主键是不透明值，必须能用返回的游标继续翻页。
+const id = (v: unknown) => typeof v === "string" && v.trim().length > 0;
 const text = (v: unknown) =>
   typeof v === "string" && v.trim().length > 0 && Buffer.byteLength(v) <= TEXT_BYTES;
 const runtime = (v: unknown) =>
@@ -52,7 +53,12 @@ export function failure(requestId: string | null, code: ApiErrorCode, message: s
 }
 export function parseRequest(message: unknown): ApiFailure | ApiRequest {
   const requestId =
-    object(message) && typeof message.id === "string" && id(message.id) ? message.id : null;
+    object(message) &&
+    typeof message.id === "string" &&
+    message.id.trim().length > 0 &&
+    message.id.length <= 128
+      ? message.id
+      : null;
   if (
     !object(message) ||
     !requestId ||
