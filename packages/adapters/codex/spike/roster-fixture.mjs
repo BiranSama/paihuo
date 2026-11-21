@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { setTimeout as pause } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { openRpc } from "./scenario-rpc.mjs";
-import { appServerEnv, verifyPolicy, verifyRoster } from "./scenarios.mjs";
+import { appServerEnv, scenarioBaseArgs, verifyPolicy, verifyRoster } from "./scenarios.mjs";
 import { cleanEnv, command, requireThat, withScratch } from "./session-common.mjs";
 
 export async function offlineRoster(exe, argv) {
@@ -27,6 +27,19 @@ export async function offlineRoster(exe, argv) {
       "原生版本不符。",
     );
     const rosters = [];
+    const base = scenarioBaseArgs(argv);
+    const rejected = command(
+      exe,
+      [...base, "-c", 'history.persistence="save-none"', "app-server", "--listen", "stdio://"],
+      project,
+      env,
+    );
+    requireThat(
+      rejected.status === 1 &&
+        /unknown variant/i.test(rejected.stderr) &&
+        /history/i.test(rejected.stderr),
+      "旧 history.persistence 负控未按预期拒绝。",
+    );
     const fixedArgs = [script, "--mark", marker];
     const fixedSpec = {
       command: process.execPath,
@@ -42,17 +55,7 @@ export async function offlineRoster(exe, argv) {
     for (const overrides of [[], ["-c", "mcp_servers.sentinel.enabled=false", ...fixedOverrides]]) {
       const c = openRpc(
         exe,
-        [
-          ...argv,
-          "-c",
-          'sandbox_mode="read-only"',
-          "-c",
-          'approval_policy="never"',
-          ...overrides,
-          "app-server",
-          "--listen",
-          "stdio://",
-        ],
+        [...base, ...overrides, "app-server", "--listen", "stdio://"],
         project,
         env,
       );
@@ -61,14 +64,15 @@ export async function offlineRoster(exe, argv) {
         c.initialized();
         const result = await c.request("config/read", { includeLayers: false, cwd: project });
         const cfg = result.config;
-        verifyPolicy(cfg, argv);
+        verifyPolicy(cfg, base);
         const item = result.config?.mcp_servers?.sentinel;
         requireThat(
           item && (item.enabled !== false) === (overrides.length === 0),
           "有效配置未反映合成服务的启用状态。",
         );
         rosters.push(item.enabled !== false);
-        if (overrides.length) verifyRoster(["sentinel"], cfg.mcp_servers, fixedArgs);
+        if (overrides.length)
+          verifyRoster(["sentinel", "paihuo_t015_roster"], cfg.mcp_servers, fixedArgs);
         await pause(1000);
       } finally {
         await c.close();
@@ -84,7 +88,8 @@ export async function offlineRoster(exe, argv) {
       mode: "offline-native-roster",
       version: "0.167.0",
       enabledThenDisabled: rosters,
-      processes: 2,
+      processes: 3,
+      rejectedInvalidHistoryEnum: true,
       markerBeforeThread: false,
       positiveControl: true,
       restrictedFixedDefinitionVerified: true,

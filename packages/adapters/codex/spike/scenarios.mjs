@@ -393,13 +393,9 @@ export async function runCase(name, { connect, project, charge, sample }) {
   return summary;
 }
 
-export async function nativeCase(name, exe, flags, env, project, remaining, record) {
-  requireThat(
-    Object.hasOwn(allowances, name) && remaining >= allowances[name] + 1,
-    "轮数不足，需保留本段完整上限和一个异常尝试。",
-  );
-  const opt = (key, value) => ["-c", `${key}=${JSON.stringify(value)}`];
-  const base = [
+const opt = (key, value) => ["-c", `${key}=${JSON.stringify(value)}`];
+export function scenarioBaseArgs(flags) {
+  return [
     ...flags,
     ...opt("approval_policy", "never"),
     ...opt("sandbox_mode", "read-only"),
@@ -407,11 +403,19 @@ export async function nativeCase(name, exe, flags, env, project, remaining, reco
     ...opt("mcp_servers.paihuo_t015_roster.enabled", false),
     ...opt("memories.use_memories", false),
     ...opt("memories.generate_memories", false),
-    ...opt("history.persistence", "save-none"),
+    ...opt("history.persistence", "none"),
     ...opt("notify", []),
     ...opt("include_skill_instructions", false),
     ...opt("features.skip_host_skill_discovery", true),
   ];
+}
+
+export async function nativeCase(name, exe, flags, env, project, remaining, record) {
+  requireThat(
+    Object.hasOwn(allowances, name) && remaining >= allowances[name] + 1,
+    "轮数不足，需保留本段完整上限和一个异常尝试。",
+  );
+  const base = scenarioBaseArgs(flags);
   const open = (argv, tool = false) =>
     openRpc(
       exe,
