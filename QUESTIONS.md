@@ -85,6 +85,7 @@
 - 建议：组长在写 T-008、T-010、T-013 前明确最小存储及读取约定；本次不自行选择或扩展范围。
 - 不回答会卡住：第一期工作完成、产物登记及展示的实现；不阻塞 T-001。
 - 跟踪：已建 [Issue #4](https://github.com/BiranSama/paihuo/issues/4)，标签 followup；备选方案见 [Discussion #5](https://github.com/BiranSama/paihuo/discussions/5)，尚未定案。
+- 2026-11-21 组长复核：[PR #14](https://github.com/BiranSama/paihuo/pull/14) 的 T-008 和 T-010 仅实现工作项及记录，产物登记沿用本条跟踪，T-013 前确定。
 
 ## 待建 issue
 
