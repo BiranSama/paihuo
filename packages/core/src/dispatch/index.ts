@@ -250,6 +250,13 @@ export function createDispatch(store: Store, registry: AdapterRegistry, options:
     });
   }
 
+  async function releaseAfterTurn(sessionId: string) {
+    // close 先尝试中断或休眠。若运行时不支持中断并拒绝忙时休眠，流退出后再释放。
+    const pending = connected.get(sessionId)?.releasing;
+    if (pending) await pending.catch(() => undefined);
+    await releaseConnection(sessionId);
+  }
+
   async function run(scope: RunScope) {
     const { sessionId, memberId, workItemId } = scope;
     running.add(sessionId);
@@ -264,6 +271,7 @@ export function createDispatch(store: Store, registry: AdapterRegistry, options:
       }
     } finally {
       running.delete(sessionId);
+      if (signal.aborted) void releaseAfterTurn(sessionId).catch(report);
       if (workItemId !== null) activeTasks--;
       changeBusy(memberId, -1);
       schedule();

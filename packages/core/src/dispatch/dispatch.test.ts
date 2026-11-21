@@ -70,9 +70,9 @@ function ref(store: Store, receipt: Receipt): NativeSessionRef {
 }
 
 // 审批事件是可控屏障。测试在明确观察到两条会话都进入适配器后才释放。
-function barrier() {
+function barrier(interrupt = true) {
   return new FakeStaffAdapter({
-    capabilities: { nativeApproval: true },
+    capabilities: { nativeApproval: true, interrupt },
     script: ({ text }) => [
       { type: "needs_approval", requestId: text, summary: "等待测试许可" },
       { type: "text_delta", text: `片段 ${text}` },
@@ -545,6 +545,24 @@ test("审批悬挂时同步关调度、立即关库，迟到事件不能写入�
     "boss",
     "system",
   ]);
+});
+
+test("不支持中断的运行时拒绝忙时休眠，关库后流退出时仍会成功释放原生会话", async () => {
+  const f = setup(barrier(false));
+  const receipt = f.dispatch.sendMessage(f.dispatch.openDm("a").id, "等候");
+  await waiting(f, receipt);
+  const native = ref(f.store, receipt);
+  const sleep = vi.spyOn(f.adapter, "sleep");
+  const interrupt = vi.spyOn(f.adapter, "interrupt");
+  f.dispatch.close();
+  f.store.close();
+  await vi.waitFor(() => expect(sleep).toHaveBeenCalledTimes(1));
+  await expect(sleep.mock.results[0]?.value).rejects.toThrow("原生会话正在运行");
+  await f.adapter.approve(native, "等候", true);
+  await vi.waitFor(() => expect(sleep).toHaveBeenCalledTimes(2));
+  await expect(sleep.mock.results[1]?.value).resolves.toBeUndefined();
+  expect(interrupt).not.toHaveBeenCalled();
+  expect(f.errors).toHaveLength(1);
 });
 
 test.each(["preamble", "start"] as const)(
