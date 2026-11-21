@@ -87,6 +87,7 @@ export async function connectSession(
   session: Session,
   connected: boolean,
   preamble: PreambleProvider,
+  signal: AbortSignal,
 ): Promise<NativeSessionRef> {
   let ref: NativeSessionRef;
   if (session.native_session !== null) {
@@ -96,16 +97,21 @@ export async function connectSession(
       cwd: session.cwd,
     };
     if (connected && session.state === "active") return ref;
-    await adapter.resume(ref, await preamble(member, session));
+    const prompt = await preamble(member, session);
+    signal.throwIfAborted();
+    await adapter.resume(ref, prompt);
   } else {
+    const prompt = await preamble(member, session);
+    signal.throwIfAborted();
     ref = await adapter.start({
       memberId: member.id,
       cwd: session.cwd,
       runtimeConfig: member.runtime_config,
-      preamble: await preamble(member, session),
+      preamble: prompt,
     });
   }
   try {
+    signal.throwIfAborted();
     store.sessions.update({
       ...session,
       native_session: ref.nativeSession,

@@ -1,5 +1,5 @@
-import type { Member, Message, Run, Session } from "@paihuo/shared";
-import { StaffAdapterError } from "@paihuo/shared/staff";
+import type { Member, Message, Run, Session, WorkItem } from "@paihuo/shared";
+import { type NativeSessionRef, type StaffAdapter, StaffAdapterError } from "@paihuo/shared/staff";
 import {
   activeMember,
   connectSession,
@@ -43,7 +43,14 @@ export function createDispatch(store: Store, registry: AdapterRegistry, options:
   if (options.onEvent) listeners.add(options.onEvent);
   const report = options.onError ?? (() => console.error("调度模块发生内部错误"));
   const preamble = options.preamble ?? defaultPreamble;
-  const connected = new Set<string>();
+  const lifetime = new AbortController();
+  const { signal } = lifetime;
+  const connected = new Map<
+    string,
+    { adapter: StaffAdapter; ref: NativeSessionRef; releasing?: Promise<void> }
+  >();
+  const finishRequested = new Set<string>();
+  const finishing = new Map<string, Promise<WorkItem>>();
   const running = new Set<string>();
   const memberCounts = new Map<string, number>();
   // 每个待执行轮次只保留路由与主键。正文在获得执行槽时按主键读取。
@@ -53,6 +60,7 @@ export function createDispatch(store: Store, registry: AdapterRegistry, options:
 
   function emit(event: DispatchEvent) {
     for (const listener of [...listeners]) {
+      if (signal.aborted) break;
       try {
         listener(event);
       } catch (error) {
@@ -139,6 +147,7 @@ export function createDispatch(store: Store, registry: AdapterRegistry, options:
     const started: Run = { ...run, state: "running", started_at: new Date().toISOString() };
     store.runs.update(started);
     emit({ type: "run.started", ...scope, run: started });
+    if (signal.aborted) return;
     let state: "done" | "failed" | "cancelled" = "failed";
     let reason = "missing_turn_done";
     let seq = 0;
@@ -152,11 +161,17 @@ export function createDispatch(store: Store, registry: AdapterRegistry, options:
         session,
         connected.has(sessionId),
         preamble,
+        signal,
       );
-      connected.add(sessionId);
+      if (signal.aborted) {
+        if (!connected.has(sessionId)) await adapter.sleep(ref);
+        return;
+      }
+      connected.set(sessionId, { adapter, ref });
       const input = store.messages.get(run.input_message_id);
       if (!input) throw new Error("缺少本轮输入");
       for await (const data of adapter.send(ref, { text: input.body })) {
+        if (signal.aborted) return;
         if (data.type === "turn_done") {
           reason = data.reason;
           state =
@@ -183,12 +198,20 @@ export function createDispatch(store: Store, registry: AdapterRegistry, options:
           default:
             record(scope, ++seq, data);
         }
+        if (signal.aborted) return;
       }
     } catch (error) {
+      if (signal.aborted) return;
       reason = error instanceof StaffAdapterError ? error.code : "execution_failed";
       state = "failed";
-      record(scope, ++seq, { type: "error", message: "", recoverable: false });
+      try {
+        record(scope, ++seq, { type: "error", message: "", recoverable: false });
+      } catch (recordError) {
+        // 工作记录写入失败时仍须尝试将运行置为终态。
+        report(recordError);
+      }
     }
+    if (signal.aborted) return;
     const ended = new Date().toISOString();
     const finished: Run = { ...started, state, end_reason: reason, ended_at: ended };
     store.dispatch.transaction(() => {
@@ -199,15 +222,27 @@ export function createDispatch(store: Store, registry: AdapterRegistry, options:
     emit({ type: "run.ended", ...scope, run: finished });
   }
 
-  async function archiveTask(session: Session) {
-    if (session.native_session && connected.has(session.id)) {
-      await registry.get(session.runtime_kind).sleep({
-        runtimeKind: session.runtime_kind,
-        nativeSession: session.native_session,
-        cwd: session.cwd,
+  function releaseConnection(sessionId: string, interrupt = false) {
+    const connection = connected.get(sessionId);
+    if (!connection) return Promise.resolve();
+    if (connection.releasing) return connection.releasing;
+    const { adapter, ref } = connection;
+    connection.releasing = Promise.resolve()
+      .then(async () => {
+        try {
+          if (interrupt && adapter.capabilities().interrupt) await adapter.interrupt(ref);
+        } finally {
+          await adapter.sleep(ref);
+          connected.delete(sessionId);
+        }
+      })
+      .finally(() => {
+        connection.releasing = undefined;
       });
-      connected.delete(session.id);
-    }
+    return connection.releasing;
+  }
+
+  function archiveTask(session: Session) {
     store.sessions.update({
       ...session,
       state: "archived",
@@ -221,10 +256,11 @@ export function createDispatch(store: Store, registry: AdapterRegistry, options:
     if (workItemId !== null) activeTasks++;
     try {
       changeBusy(memberId, 1);
+      if (signal.aborted) return;
       await execute(scope);
-      if (workItemId !== null && store.workItems.get(workItemId)?.status === "done") {
-        const current = store.sessions.get(sessionId);
-        if (current) await archiveTask(current);
+      if (signal.aborted) return;
+      if (workItemId !== null && finishRequested.delete(workItemId)) {
+        await finalizeWork(workItemId);
       }
     } finally {
       running.delete(sessionId);
@@ -235,7 +271,7 @@ export function createDispatch(store: Store, registry: AdapterRegistry, options:
   }
 
   function schedule() {
-    if (scheduled) return;
+    if (scheduled || signal.aborted) return;
     scheduled = true;
     queueMicrotask(() => {
       scheduled = false;
@@ -251,17 +287,47 @@ export function createDispatch(store: Store, registry: AdapterRegistry, options:
     });
   }
 
+  async function finish(workId: string) {
+    signal.throwIfAborted();
+    const item = store.workItems.get(workId);
+    if (!item || item.status === "archived") throw new Error("工作项不存在或已归档");
+    const session = store.dispatch.currentSession(item.owner_member_id, "task", item.id);
+    if (session) await releaseConnection(session.id);
+    signal.throwIfAborted();
+    const work = store.dispatch.transaction(() => {
+      if (session) archiveTask(session);
+      return item.status === "done" ? item : completeWork(store, item);
+    });
+    if (item.status !== "done") emit({ type: "work.updated", work });
+    return work;
+  }
+
+  function finalizeWork(workId: string) {
+    const existing = finishing.get(workId);
+    if (existing) return existing;
+    const promise = Promise.resolve()
+      .then(() => finish(workId))
+      .finally(() => finishing.delete(workId));
+    finishing.set(workId, promise);
+    return promise;
+  }
+
   recoverInterrupted(store, emit);
   return {
-    openDm: (memberId: string) => openDm(store, memberId),
+    openDm(memberId: string) {
+      signal.throwIfAborted();
+      return openDm(store, memberId);
+    },
     memberStatus: status,
     subscribe(listener: (event: DispatchEvent) => void) {
+      signal.throwIfAborted();
       listeners.add(listener);
       return () => {
         listeners.delete(listener);
       };
     },
     sendMessage(conversationId: string, text: string) {
+      signal.throwIfAborted();
       const memberId = store.dispatch.dmRecipient(conversationId);
       if (!memberId) throw new Error("私聊不存在或没有唯一接收人");
       const member = activeMember(store, memberId);
@@ -274,6 +340,7 @@ export function createDispatch(store: Store, registry: AdapterRegistry, options:
       return admit(queued);
     },
     startWork(input: StartWorkInput) {
+      signal.throwIfAborted();
       const member = activeMember(store, input.memberId);
       registry.get(member.runtime_kind);
       const { item, queued } = createWork(store, input, (work) => {
@@ -284,16 +351,32 @@ export function createDispatch(store: Store, registry: AdapterRegistry, options:
       emit({ type: "work.updated", work: item });
       return { work: item, ...receipt };
     },
-    async finishWork(workId: string) {
+    finishWork(workId: string) {
+      signal.throwIfAborted();
+      const existing = finishing.get(workId);
+      if (existing) return existing;
       const item = store.workItems.get(workId);
-      if (!item || item.status === "archived") throw new Error("工作项不存在或已归档");
-      const session = store.dispatch.currentSession(item.owner_member_id, "task", item.id);
-      if (session && queues.has(session.id)) throw new Error("工作尚在排队");
-      if (session && !running.has(session.id)) await archiveTask(session);
-      if (item.status === "done") return item;
-      const work = completeWork(store, item);
-      emit({ type: "work.updated", work });
-      return work;
+      if (!item || item.status === "archived")
+        return Promise.reject(new Error("工作项不存在或已归档"));
+      const session = store.dispatch.currentSession(item.owner_member_id, "task", workId);
+      if (session && queues.has(session.id)) return Promise.reject(new Error("工作尚在排队"));
+      if (session && running.has(session.id)) {
+        // 成员可以在自己的一轮中请求收尾；同步登记意图，工具调用无需等待所属轮次结束。
+        finishRequested.add(workId);
+        return Promise.resolve(item);
+      }
+      return finalizeWork(workId);
+    },
+    // 先失效所有回调，调用方随后即可同步关库。原生进程的收尾不能阻塞内核退出。
+    close() {
+      if (signal.aborted) return;
+      lifetime.abort(new Error("调度器已关闭"));
+      queues.clear();
+      finishRequested.clear();
+      listeners.clear();
+      for (const id of connected.keys()) {
+        void releaseConnection(id, running.has(id)).catch(report);
+      }
     },
   };
 }

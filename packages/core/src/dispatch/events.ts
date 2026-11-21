@@ -13,7 +13,8 @@ export type MemberStatus = "idle" | "working";
 export type DispatchEvent =
   | { type: "message.created"; message: Message; runId: string | null; sessionId: string }
   | ({ type: "message.delta"; text: string } & RunScope)
-  | ({ type: "run.started" | "run.ended"; run: Run } & RunScope)
+  | ({ type: "run.started"; run: Run } & RunScope)
+  | ({ type: "run.ended"; run: Run } & RunScope)
   | ({
       type: "run.event";
       event: RunEvent;

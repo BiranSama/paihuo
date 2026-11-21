@@ -29,6 +29,9 @@ export function createMessages(db: DatabaseSync) {
     SELECT coalesce(max(seq),0) + 1, ?, ?, ?, ?, ?, ?, ? FROM messages WHERE conversation_id = ?
     RETURNING *
   `);
+  // 旧调用者只使用全会话分页。私聊索引查询在第一次按此视图翻页时再准备。
+  let dmBefore: ReturnType<typeof pages> | undefined;
+  let dmAfter: ReturnType<typeof pages> | undefined;
   return {
     get(id: string) {
       return get.get(id) as unknown as Message | undefined;
@@ -47,7 +50,13 @@ export function createMessages(db: DatabaseSync) {
     },
     before: pages(db, "before"),
     after: pages(db, "after"),
-    dmBefore: pages(db, "before", true),
-    dmAfter: pages(db, "after", true),
+    dmBefore(...args: Parameters<ReturnType<typeof pages>>) {
+      dmBefore ??= pages(db, "before", true);
+      return dmBefore(...args);
+    },
+    dmAfter(...args: Parameters<ReturnType<typeof pages>>) {
+      dmAfter ??= pages(db, "after", true);
+      return dmAfter(...args);
+    },
   };
 }

@@ -209,13 +209,13 @@ test("5 任务槽已满且下一工作已在排队，负责人的私聊仍可立
 test("6 默认四个任务槽，第五个等名额释放才启动原生会话", async () => {
   const f = setup(barrier());
   const start = vi.spyOn(f.adapter, "start");
-  const [a, b, c, d, e] = ["一", "二", "三", "四", "五"].map((t) => f.work(t)) as [
-    Receipt,
-    Receipt,
-    Receipt,
-    Receipt,
-    Receipt,
-  ];
+  const [a, b, c, d, e] = [
+    f.work("一"),
+    f.work("二"),
+    f.work("三"),
+    f.work("四"),
+    f.work("五"),
+  ] as const;
   await Promise.all([a, b, c, d].map((r) => waiting(f, r)));
   expect(start).toHaveBeenCalledTimes(4);
   expect(f.store.sessions.get(e.sessionId)?.native_session).toBeNull();
@@ -286,6 +286,29 @@ test("8 中途抛错仍释放会话，下一轮正常完成", async () => {
     one.runId,
     two.runId,
   ]);
+});
+
+test("摘要入库故障仍终结运行，后续会话可以继续执行", async () => {
+  const f = setup(
+    new FakeStaffAdapter({
+      script: ({ text }) =>
+        text === "触发记录"
+          ? [
+              { type: "tool_started", name: "Read", summary: "读" },
+              { type: "turn_done", reason: "completed" },
+            ]
+          : [{ type: "turn_done", reason: "completed" }],
+    }),
+  );
+  vi.spyOn(f.store.runEvents, "insert").mockImplementation(() => {
+    throw new Error("模拟摘要写入失败");
+  });
+  const chat = f.dispatch.openDm("a");
+  const first = f.dispatch.sendMessage(chat.id, "触发记录");
+  const second = f.dispatch.sendMessage(chat.id, "新一轮");
+  await waitForEnd(f, first, "failed");
+  await waitForEnd(f, second);
+  expect(f.errors).toHaveLength(1);
 });
 
 test("9 原生审批仅通知并登记，显式拒绝后才结束；中断原因正确映射", async () => {
@@ -431,3 +454,129 @@ test("异步前言阻塞时同会话只启动一次；启动失败后新的人�
   expect(start).toHaveBeenCalledTimes(2);
   expect(start.mock.calls[1]?.[0].preamble).toBe("注入前言");
 });
+
+test("同一工作并发结束共用一次休眠，工作和会话同时提交，只发一次完成事件", async () => {
+  const f = setup();
+  const task = f.work("结束");
+  await waitForEnd(f, task);
+  const gate = Promise.withResolvers<void>();
+  const sleep = f.adapter.sleep.bind(f.adapter);
+  const sleeps = vi.spyOn(f.adapter, "sleep").mockImplementation(async (ref) => {
+    await gate.promise;
+    await sleep(ref);
+  });
+  const first = f.dispatch.finishWork(task.work.id);
+  const second = f.dispatch.finishWork(task.work.id);
+  await vi.waitFor(() => expect(sleeps).toHaveBeenCalledTimes(1));
+  expect(f.store.workItems.get(task.work.id)?.status).toBe("running");
+  expect(f.store.sessions.get(task.sessionId)?.state).toBe("active");
+  gate.resolve();
+  const [one, two] = await Promise.all([first, second]);
+  expect(one).toEqual(two);
+  expect((await f.dispatch.finishWork(task.work.id)).status).toBe("done");
+  expect(f.store.sessions.get(task.sessionId)?.state).toBe("archived");
+  expect(sleeps).toHaveBeenCalledTimes(1);
+  expect(
+    f.events.filter((e) => e.type === "work.updated" && e.work.status === "done"),
+  ).toHaveLength(1);
+});
+
+test("运行中可请求完成且不阻塞该轮，休眠失败时保留可重试状态", async () => {
+  const f = setup(barrier());
+  const task = f.work("进行中");
+  await waiting(f, task);
+  const sleep = vi.spyOn(f.adapter, "sleep").mockRejectedValueOnce(new Error("模拟休眠失败"));
+  expect((await f.dispatch.finishWork(task.work.id)).status).toBe("running");
+  expect((await f.dispatch.finishWork(task.work.id)).status).toBe("running");
+  expect(sleep).not.toHaveBeenCalled();
+  await release(f, task, "进行中");
+  await vi.waitFor(() => expect(f.errors).toHaveLength(1));
+  expect(f.store.workItems.get(task.work.id)?.status).toBe("running");
+  expect(f.store.sessions.get(task.sessionId)?.state).toBe("active");
+  expect(
+    f.events.filter((e) => e.type === "work.updated" && e.work.status === "done"),
+  ).toHaveLength(0);
+  expect((await f.dispatch.finishWork(task.work.id)).status).toBe("done");
+  expect(f.store.sessions.get(task.sessionId)?.state).toBe("archived");
+  expect(sleep).toHaveBeenCalledTimes(2);
+  expect(
+    f.events.filter((e) => e.type === "work.updated" && e.work.status === "done"),
+  ).toHaveLength(1);
+});
+
+test("审批悬挂时同步关调度、立即关库，迟到事件不能写入，重启仅提示", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "paihuo-dispatch-close-"));
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+  const store = openStore(dir);
+  cleanups.push(store.close);
+  const adapter = barrier();
+  const registry = new AdapterRegistry([adapter]);
+  const events: DispatchEvent[] = [];
+  const errors: unknown[] = [];
+  const dispatch = createDispatch(store, registry, {
+    onEvent: (e) => events.push(e),
+    onError: (e) => errors.push(e),
+  });
+  store.members.insert(member("a"));
+  const chat = dispatch.openDm("a");
+  const active = dispatch.sendMessage(chat.id, "待批准");
+  const queued = dispatch.sendMessage(chat.id, "排队");
+  await vi.waitFor(() =>
+    expect(events.some((e) => e.type === "run.event" && e.approval)).toBe(true),
+  );
+  const interrupted = vi.spyOn(adapter, "interrupt"),
+    slept = vi.spyOn(adapter, "sleep");
+  const count = events.length;
+  dispatch.close();
+  dispatch.close();
+  store.close();
+  expect(() => dispatch.sendMessage(chat.id, "已经关闭")).toThrow("调度器已关闭");
+  await vi.waitFor(() => expect(slept).toHaveBeenCalledTimes(1));
+  expect(interrupted).toHaveBeenCalledTimes(1);
+  expect(events).toHaveLength(count);
+  expect(errors).toEqual([]);
+  const next = openStore(dir);
+  cleanups.push(next.close);
+  expect(next.runs.get(active.runId)?.state).toBe("unknown");
+  expect(next.runs.get(queued.runId)?.state).toBe("unknown");
+  createDispatch(next, registry);
+  expect(next.messages.dmBefore(chat.id, undefined, 10).map((m) => m.author_kind)).toEqual([
+    "boss",
+    "boss",
+    "system",
+  ]);
+});
+
+test.each(["preamble", "start"] as const)(
+  "异步 %s 挂起时关闭，迟到的原生启动只清理不落库",
+  async (stage) => {
+    const gate = Promise.withResolvers<void>();
+    const preamble = vi.fn(async () => {
+      if (stage === "preamble") await gate.promise;
+      return "前言";
+    });
+    const f = setup(new FakeStaffAdapter(), { preamble });
+    const realStart = f.adapter.start.bind(f.adapter);
+    const start = vi.spyOn(f.adapter, "start").mockImplementation(async (input) => {
+      if (stage === "start") await gate.promise;
+      return realStart(input);
+    });
+    const sleep = vi.spyOn(f.adapter, "sleep"),
+      send = vi.spyOn(f.adapter, "send");
+    const chat = f.dispatch.openDm("a");
+    f.dispatch.sendMessage(chat.id, "待启动");
+    await vi.waitFor(() =>
+      expect(stage === "preamble" ? preamble : start).toHaveBeenCalledTimes(1),
+    );
+    const count = f.events.length;
+    f.dispatch.close();
+    f.store.close();
+    gate.resolve();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(sleep).toHaveBeenCalledTimes(stage === "start" ? 1 : 0);
+    expect(start).toHaveBeenCalledTimes(stage === "start" ? 1 : 0);
+    expect(send).not.toHaveBeenCalled();
+    expect(f.events).toHaveLength(count);
+    expect(f.errors).toEqual([]);
+  },
+);
