@@ -71,3 +71,55 @@ node packages/adapters/claude-code/spike/offline.mjs --synthetic-only
 - 在基线 `0a6cb2c` 的 Windows 隔离工作树执行 `pnpm test --reporter=verbose`，Vitest 自动发现 `offline.test.mjs`，3 个测试文件共 10 个用例通过。新增用例清空子进程的 PATH，检查 `--synthetic-only` 正常退出、无标准错误，并输出合成覆盖汇总。
 
 交付文件为本文和 `spike/offline.mjs`、`spike/synthetic-events.mjs`、`spike/offline.test.mjs`。运行现场数据仅保留汇总状态。
+
+## T-015 真实会话
+
+2026-11-21，Windows 11 x64（10.0.26100），原生 Claude Code 2.1.316。候选入口为原生 CLI 流式打印与 Agent SDK。组长执行本机认证检查时，原生 CLI 退出 1，返回未登录。未发送模型消息，模型轮数为 0。工作区没有安装 Agent SDK。项目当前无法核对这台机器经过程序化调用后的真实额度、流式增量或会话行为。
+
+从项目根目录在 PowerShell 运行。`--plan` 以及省略参数时均只打印计划，包含 12 项取证结构、六个能力字段和真实 smoke 的完整 argv。`--offline mcp` 启动本地固定 MCP 小程序，`--offline job` 验证 Windows Job 会清理一个仍在运行的测试后代。版本与帮助检查沿用 T-003 的 `offline.mjs`。
+
+```powershell
+$p = 'packages/adapters/claude-code/spike/session-check.mjs'
+node $p --plan
+node $p --offline protocol
+node $p --offline mcp
+node $p --offline job
+```
+
+组长仅在老板审阅对应命令后执行下一段。`$exe` 为审阅过的本机原生程序绝对路径。`--policy-reviewed` 表示已经确认本次仍会生效的托管设置没有自定义 hooks、凭据或服务端点覆写。两个账号阶段只使用官方 CLI 的默认登录位置。原始认证输出仅在驱动进程内部解析。`$before` 为已记录的同一额度窗口已用百分比，`$spent` 为本卡该 harness 已使用的原生轮次，包括已发起而失败的尝试、可见重试及追加输入。仅在订阅剩余额度足、额外付费途径已关闭时使用 `--included-only`。缺数据、额度耗尽或未登录时停止。结束后再从同一窗口记录后值、单位、时间与是否发生重置，不把取整后读数未变解释成零消耗。
+
+```powershell
+node $p --live transport --exe $exe --policy-reviewed
+node $p --live auth --exe $exe --policy-reviewed
+node $p --live smoke --exe $exe --policy-reviewed --included-only --before-used-percent $before --used-turns $spent
+```
+
+transport 在新建的临时项目和空白配置中，只尝试随机不存在的恢复 ID。smoke 在新的临时目录，用固定中文前言和一个短输入请求固定标记，组合使用 `--safe-mode`、`--restricted`、空内置工具清单、禁 MCP、拒绝权限、单原生轮、禁重试和禁会话持久化。每次只允许一侧一个 smoke，从共享 Git 管理目录以独占创建的方式预留一轮，失败也保留预留。清除预留需要组长先核对累计用量。所有本机子进程在 Windows Job 内运行。驱动仅输出筛选后的结论，不写原始响应、会话 ID 或账户信息。[驱动](spike/session-check.mjs) · [官方 CLI 参数](https://code.claude.com/docs/en/cli-reference) · [重试与环境变量](https://code.claude.com/docs/en/env-vars)
+
+| 项目 | 当前结论和观察 | 对应命令或后续取证 |
+| --- | --- | --- |
+| 1 路线 | CLI 版本可核对，订阅登录当前不可用；项目 SDK 未安装。两条路线的原生行为尚不能比较。 | `--live auth`，随后在具备条件时对照 CLI 与 SDK |
+| 2 启动与前言 | 未发消息，实际工作目录和前言待验。 | `--live smoke` 核对固定标记 |
+| 3 流式事件 | 合成增量及工具配对通过；真实增量、最终消息和工具事件待验。 | `--offline protocol`；smoke 只测文本增量 |
+| 4 恢复 | 已实现无效恢复的单独入口；错误必须明确指向不存在会话才可映射。跨进程恢复暗号待验。 | `--live transport`；成功恢复需另一个可持久化的短会话 |
+| 5 中断 | 真实中断、进程状态、中断前文件及后续发言待验。 | 后续在单独临时目录发 `interrupt()` 并核对结果 |
+| 6 引导 | 实际活动轮效果与排队次序待验。 | 记录第二条流式输入所影响的原生轮 |
+| 7 并行 | 合成流可分离；两条真实会话的事件和文件隔离待验。 | `--offline protocol`；原生检查分别使用两个临时目录 |
+| 8 权限 | smoke 配置为禁工具；尚未观察到真实审批，也不能判定 Q-014 A。 | 后续只向同一测试根下的兄弟临时目录请求写入，拒绝后核对文件不存在 |
+| 9 成员工具 | 固定 MCP 的 stdio 握手、单工具发现、合法调用与拒绝多余参数均通过。Claude 原生调用待验。 | `--offline mcp`；[本地 MCP](../codex/spike/fixed-mcp.mjs) |
+| 10 计费与认证 | 组长观察到本机原生已有登录不可用。测试前值与后值均未取得，实际额度归属无法确认。 | `--live auth` 返回未登录；比较同窗口测试前后数字 |
+| 11 资源 | Windows Job 的离线后代回收已验。原生持续会话的空闲/工作内存和退出回收待验。 | `--offline job`；未来按工作集分别采样本次原生进程树 |
+| 12 压缩 | 0 模型轮，未观察到压缩，Q-004 保留。 | 将来在原生轮数上限内被动观察 `compact_boundary` |
+
+原生订阅登录、程序化使用的额度归属、将 Claude 登录用于第三方产品是三个不同问题。裸模式会跳过订阅 OAuth，因此这里使用受限模式和安全模式。产品集成阶段仍须按调用主体核对官方认证条件。[程序化运行](https://code.claude.com/docs/en/headless) · [认证与条款](https://code.claude.com/docs/en/legal-and-compliance)
+
+| AdapterCapabilities | 真实支持状态 | 缺失的原生证据 |
+| --- | --- | --- |
+| `resume` | 待验 | 按 ID 跨进程继续并记得暗号 |
+| `guide` | 待验 | 同轮收到并执行追加输入 |
+| `interrupt` | 待验 | 可归因的中断终态及下一轮 |
+| `parallel` | 待验 | 双会话并发及文件隔离 |
+| `images` | 待验 | 收到合成图片并答出图内标记 |
+| `nativeApproval` | 待验 | 宿主收到并拒绝匹配的原生请求 |
+
+T-006 仍等关卡。恢复有效登录后可先执行已审阅的 CLI 单轮，再比较 SDK。SDK 安装和使用其他付费认证渠道分别需要授权。
