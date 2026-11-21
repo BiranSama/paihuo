@@ -22,7 +22,7 @@ import { recoverInterrupted } from "./recovery";
 import type { AdapterRegistry } from "./registry";
 
 export type { DispatchEvent, MemberStatus, RunScope } from "./events";
-export { AdapterRegistry } from "./registry";
+export { AdapterRegistry, MissingAdapterError } from "./registry";
 
 interface Options {
   taskConcurrency?: number;
@@ -34,7 +34,6 @@ interface Options {
 interface PendingTurn {
   scope: RunScope;
   adapter: StaffAdapter;
-  parallel: boolean;
 }
 
 interface Queued {
@@ -60,7 +59,7 @@ export function createDispatch(store: Store, registry: AdapterRegistry, options:
   const running = new Set<string>();
   const memberCounts = new Map<string, number>();
   const serialMembers = new Set<string>();
-  // 待执行轮次只保留路由、能力与主键；正文在获得执行槽时按主键读取。
+  // 待执行轮次只保留路由与主键；正文在获得执行槽时按主键读取。
   const queues = new Map<string, PendingTurn[]>();
   let activeTasks = 0;
   let scheduled = false;
@@ -98,7 +97,6 @@ export function createDispatch(store: Store, registry: AdapterRegistry, options:
   ): Queued {
     // 已有会话沿用其持久化的运行时，可能与成员当前配置不同。
     const adapter = registry.get(session.runtime_kind);
-    const { parallel } = adapter.capabilities();
     const message = store.messages.append({
       id: crypto.randomUUID(),
       conversation_id: conversationId,
@@ -123,7 +121,6 @@ export function createDispatch(store: Store, registry: AdapterRegistry, options:
       turn: {
         scope: { memberId: member.id, sessionId: session.id, conversationId, workItemId, runId },
         adapter,
-        parallel,
       },
     };
   }
@@ -271,7 +268,7 @@ export function createDispatch(store: Store, registry: AdapterRegistry, options:
     await releaseConnection(sessionId);
   }
 
-  async function run({ scope, adapter, parallel }: PendingTurn) {
+  async function run({ scope, adapter }: PendingTurn, parallel: boolean) {
     const { sessionId, memberId, workItemId } = scope;
     running.add(sessionId);
     if (!parallel) serialMembers.add(memberId);
@@ -307,7 +304,14 @@ export function createDispatch(store: Store, registry: AdapterRegistry, options:
         const { memberId, workItemId } = turn.scope;
         if (serialMembers.has(memberId) || drainingMembers.has(memberId)) continue;
         if (workItemId !== null && activeTasks >= limit) continue;
-        if (!turn.parallel && memberCounts.has(memberId)) {
+        let parallel = false;
+        try {
+          parallel = turn.adapter.capabilities().parallel;
+        } catch (error) {
+          // 探测失败时按串行调度，当前轮次和其他成员仍可继续。
+          report(error);
+        }
+        if (!parallel && memberCounts.has(memberId)) {
           // 已等到任务槽的串行轮次先等该成员空闲，不让本轮后续投递延长等待。
           drainingMembers.add(memberId);
           continue;
@@ -315,7 +319,7 @@ export function createDispatch(store: Store, registry: AdapterRegistry, options:
         pending.shift();
         queues.delete(id);
         if (pending.length) queues.set(id, pending);
-        void run(turn).catch(report);
+        void run(turn, parallel).catch(report);
       }
     });
   }
