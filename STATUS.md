@@ -17,13 +17,15 @@ Windows x64 桌面骨架启动本机内核，显示连接状态和版本。窗�
 | [T-003](tasks/T-003.md) | Claude Code 2.1.316 已在 Windows 验证本机命令与合成事件，真实会话待验。[PR #9](https://github.com/BiranSama/paihuo/pull/9) |
 | [T-004](tasks/T-004.md) | Codex CLI 0.167.0 已在 Windows 验证本机命令与合成事件，真实会话待验。[PR #10](https://github.com/BiranSama/paihuo/pull/10) |
 | [T-005](tasks/T-005.md) | 已交付员工接口、可配置的内存适配器、工厂型契约套件和接入说明。[PR #11](https://github.com/BiranSama/paihuo/pull/11) |
-| [T-008](tasks/T-008.md) | 内核调度已用假适配器和临时 SQLite 通过 11 条验收及 18 项回归。同成员串行调度、工作恢复提示与有界列表已供 T-010 接入，修正后的独立复评待确认。[PR #15](https://github.com/BiranSama/paihuo/pull/15) |
+| [T-008](tasks/T-008.md) | 假适配器与临时 SQLite 通过 11 项验收和 18 项回归。独立评审复验同成员串行调度、工作恢复提示与有界列表。[PR #15](https://github.com/BiranSama/paihuo/pull/15) |
+| [T-010](tasks/T-010.md) | 本机 WebSocket 已接入 SQLite 与调度器，七个命令、双客户端事件和打包后的内核子进程已通过验收。[PR #18](https://github.com/BiranSama/paihuo/pull/18) |
 
-T-008 分支在本机通过 75 项 Vitest 和工作区静态检查。T-010 负责连接桌面 WebSocket，真实 harness 验证见 T-015。
+Windows 本地通过工作区静态检查和 89 项 Vitest。内存适配器用于测试；生产内核在真实适配器未接入时返回 `ADAPTER_NOT_READY`。
+
 
 ## 接下来的任务
 
-已合并[网页端 Claude 的 PR #14](https://github.com/BiranSama/paihuo/pull/14)。[T-010](tasks/T-010.md) 接入 T-008 的调度接口。[T-015](tasks/T-015.md) 已在[PR #16](https://github.com/BiranSama/paihuo/pull/16) 开始隔离验证，首批每种客户端最多一轮已获批准，须先核实订阅条件。M1 的目标是在桌面完成一次可恢复的真实私聊。
+已合并[网页端 Claude 的 PR #14](https://github.com/BiranSama/paihuo/pull/14)。[T-015 原生验证](https://github.com/BiranSama/paihuo/pull/16) 已完成首批预检。Claude Code 的本机订阅未登录。Codex 首次短消息触发了实验脚本的未知事件保护，尚未确认成功终态。Q-013 和真实适配器路线继续等待 T-015。M1 的目标是在桌面完成一次可恢复的真实私聊。
 
 ## 决定与待验
 

@@ -2,29 +2,20 @@ import { timingSafeEqual } from "node:crypto";
 import { once } from "node:events";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { SystemInfo, SystemInfoRequest, SystemInfoResponse } from "@paihuo/shared";
+import type { SystemInfo } from "@paihuo/shared";
 import { WebSocketServer } from "ws";
+import type { CoreApi } from "./api";
+import { FRAME_BYTES } from "./api/protocol";
+import { createTransport } from "./api/transport";
 
 const protocol = "paihuo.v1";
 const loopback = "127.0.0.1";
-
-function isSystemInfoRequest(message: unknown): message is SystemInfoRequest {
-  return (
-    typeof message === "object" &&
-    message !== null &&
-    "id" in message &&
-    typeof message.id === "string" &&
-    message.id.length > 0 &&
-    message.id.length <= 128 &&
-    "method" in message &&
-    message.method === "system.info"
-  );
-}
 
 export async function startCore(options: {
   token: string;
   origin: string;
   systemInfo: () => SystemInfo;
+  api?: CoreApi;
 }) {
   const expectedToken = Buffer.from(options.token);
   const server = createServer({ headersTimeout: 5_000 }, (_request, response) => {
@@ -32,9 +23,10 @@ export async function startCore(options: {
   });
   const sockets = new WebSocketServer({
     noServer: true,
-    maxPayload: 16 * 1024,
+    maxPayload: FRAME_BYTES,
     handleProtocols: (protocols) => (protocols.has(protocol) ? protocol : false),
   });
+  const transport = createTransport(sockets.clients, options.systemInfo, options.api);
 
   server.on("clientError", (_error, socket) => socket.destroy());
   server.on("upgrade", (request, socket, head) => {
@@ -58,22 +50,29 @@ export async function startCore(options: {
     }
 
     sockets.handleUpgrade(request, socket, head, (connection) => {
-      connection.on("error", () => connection.terminate());
+      connection.on("error", (error) => {
+        // ws 已为超限文本启动 1009 关闭握手；提前销毁底层 socket 会让客户端只能收到 1006。
+        if (
+          "code" in error &&
+          error.code === "WS_ERR_UNSUPPORTED_MESSAGE_LENGTH" &&
+          connection.readyState === connection.CLOSING
+        )
+          return;
+        connection.terminate();
+      });
       connection.on("message", (data, isBinary) => {
         let message: unknown;
         try {
-          if (!isBinary) message = JSON.parse(data.toString());
+          if (isBinary) {
+            connection.close(1008, "Invalid request");
+            return;
+          }
+          message = JSON.parse(data.toString());
         } catch {
-          // 格式错误的消息统一按协议错误关闭。
-        }
-
-        if (!isSystemInfoRequest(message)) {
           connection.close(1008, "Invalid request");
           return;
         }
-
-        const response: SystemInfoResponse = { id: message.id, result: options.systemInfo() };
-        connection.send(JSON.stringify(response));
+        transport.receive(connection, message);
       });
     });
   });
@@ -84,6 +83,7 @@ export async function startCore(options: {
     port: (server.address() as AddressInfo).port,
     close: () =>
       new Promise<void>((resolve, reject) => {
+        transport.close();
         for (const connection of sockets.clients) connection.terminate();
         sockets.close();
         server.close((error) => (error ? reject(error) : resolve()));

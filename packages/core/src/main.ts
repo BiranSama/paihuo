@@ -3,7 +3,10 @@ import { delimiter, isAbsolute, join } from "node:path";
 import { createInterface } from "node:readline";
 import type { SystemInfo } from "@paihuo/shared";
 import { version } from "../package.json";
+import { createApi } from "./api";
+import { AdapterRegistry, createDispatch } from "./dispatch";
 import { startCore } from "./server";
+import { openStore } from "./store";
 
 function detectedHarnesses(): SystemInfo["harnesses"] {
   const paths = (process.env.PATH ?? "").split(delimiter).filter(isAbsolute);
@@ -60,21 +63,33 @@ async function main() {
   if (line === undefined) return;
 
   const config = readConfig(line);
-  const core = await startCore({
-    token: config.token,
-    origin: config.origin,
-    systemInfo: () => ({
-      version,
-      dataDir: config.dataDir,
-      harnesses: detectedHarnesses(),
-      memoryBytes: process.memoryUsage.rss(),
-    }),
-  });
+  const store = openStore(config.dataDir);
+  try {
+    const registry = new AdapterRegistry();
+    const dispatch = createDispatch(store, registry);
+    try {
+      const core = await startCore({
+        token: config.token,
+        origin: config.origin,
+        api: createApi(store, dispatch),
+        systemInfo: () => ({
+          version,
+          dataDir: config.dataDir,
+          harnesses: detectedHarnesses(),
+          memoryBytes: process.memoryUsage.rss(),
+        }),
+      });
 
-  // 标准输出只报告就绪端口。令牌仅经父进程的标准输入管道传入。
-  process.stdout.write(`${JSON.stringify({ port: core.port })}\n`);
-  await ended;
-  await core.close();
+      // 标准输出只报告就绪端口。令牌仅经父进程的标准输入管道传入。
+      process.stdout.write(`${JSON.stringify({ port: core.port })}\n`);
+      await ended;
+      await core.close();
+    } finally {
+      dispatch.close();
+    }
+  } finally {
+    store.close();
+  }
 }
 
 main().catch(() => {
