@@ -128,7 +128,7 @@ T-007 仍等关卡。App Server 保留为候选。应以实际控制活跃轮、
 
 ### 第二批 App Server 验证命令
 
-组长已执行 `steer`。原生会话接受两个宿主动作，随后报告响应流断开及准备重连。控制器在未知 HTTP 类别、无模型输出时停止，整批暂停。此时无法判断新指令能否改变同一轮的答复。
+组长已执行 `steer`。宿主向原生会话提交两个动作，随后报告响应流断开及准备重连。控制器在未知 HTTP 类别、无模型输出时停止，整批暂停。此时无法判断新指令能否改变同一轮的答复。
 
 `--offline scenarios` 在 Node 实现的假 App Server 上实际收发 stdio 消息。另用同版本官方二进制的 `native-roster` 样例，在没有账号的临时配置里放置一个只写启动标记的 MCP。两次读取有效配置时分别看到该服务启用、禁用，均未触发标记；直接运行同一程序的阳性对照触发标记。只在本机回环的独立 Responses 模拟中，关闭 view_image、goals 和 experimental_request_user_input 后，技术员观察到发给模拟服务的工具清单为空。该模拟也观察到原生轮开始前可能出现模型元数据诊断。驱动仅接受已核实的固定版本、固定模型、固定原文和位置，其他未知项输出枚举类别并中止。首次真实 exec 究竟遇到哪种 item 仍未知。[受控场景](spike/scenarios.mjs) · [回环前置检查](spike/roster-fixture.mjs) · [执行事件定义](https://github.com/openai/codex/blob/rust-v0.167.0/codex-rs/exec/src/exec_events.rs)
 
@@ -141,6 +141,12 @@ node $p --offline native-roster --exe $exe
 
 ```powershell
 node $p --live scenarios --case NAME --exe $exe --policy-reviewed --included-only --before-used-percent $before --used-turns $spent
+```
+
+图片场景另有一条待单独批准的命令。它预留 2 个动作，只提交一次原生 `turn/start`。如果原生服务通知将重连，控制器会先把这次可见重连追加到本地持久账本，再继续读取原来的流。需同时核对原线程和轮次、启动回执、此前无模型文本、推理或工具活动。只接受精确的 `responseStreamDisconnected`、`willRetry=true`，HTTP 状态须缺省或为 500、502、503、504。遇到再次断流、401、403、429、未知事件后无法确认是否已有输出、或计量条件变化，停止。最终仍须由同一轮返回唯一且能识别随机构图的答案。第二批合计最多 13 个新增动作，含这次可能发生的重连。组长据实际累计缩减后续场景，两批合计最多 14 个动作。该路径目前仅通过离线合成回归。
+
+```powershell
+node $p --live scenarios --case image --exe $exe --policy-reviewed --included-only --before-used-percent $before --used-turns $spent --allow-one-stream-reconnect
 ```
 
 | NAME      | 原生动作上限 | 如何判断                                                                                                                                                                                                 |
