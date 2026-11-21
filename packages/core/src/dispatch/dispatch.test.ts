@@ -3,8 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Member } from "@paihuo/shared";
 import {
+  type AdapterCapabilities,
   type AdapterEvent,
   type NativeSessionRef,
+  type RuntimeKind,
+  type StaffAdapter,
   StaffAdapterError,
   type TurnInput,
 } from "@paihuo/shared/staff";
@@ -35,14 +38,15 @@ function member(id: string): Member {
 }
 
 function setup(
-  adapter = new FakeStaffAdapter(),
+  adapter: StaffAdapter = new FakeStaffAdapter(),
   options: Parameters<typeof createDispatch>[2] = {},
+  otherAdapters: StaffAdapter[] = [],
 ) {
   const store = openStore({ temporary: true });
   cleanups.push(store.close);
   const events: DispatchEvent[] = [];
   const errors: unknown[] = [];
-  const dispatch = createDispatch(store, new AdapterRegistry([adapter]), {
+  const dispatch = createDispatch(store, new AdapterRegistry([adapter, ...otherAdapters]), {
     onEvent: (event) => events.push(event),
     onError: (error) => errors.push(error),
     ...options,
@@ -70,9 +74,12 @@ function ref(store: Store, receipt: Receipt): NativeSessionRef {
 }
 
 // 审批事件是可控屏障。测试在明确观察到两条会话都进入适配器后才释放。
-function barrier(interrupt = true) {
-  return new FakeStaffAdapter({
-    capabilities: { nativeApproval: true, interrupt },
+function barrier(
+  capabilities: Partial<AdapterCapabilities> = {},
+  kind: RuntimeKind = "native",
+): StaffAdapter {
+  const adapter = new FakeStaffAdapter({
+    capabilities: { nativeApproval: true, ...capabilities },
     script: ({ text }) => [
       { type: "needs_approval", requestId: text, summary: "等待测试许可" },
       { type: "text_delta", text: `片段 ${text}` },
@@ -80,6 +87,7 @@ function barrier(interrupt = true) {
       { type: "turn_done", reason: "completed" },
     ],
   });
+  return Object.defineProperty(adapter, "kind", { value: kind });
 }
 function waiting(f: Fixture, receipt: Receipt) {
   return vi.waitFor(() =>
@@ -229,6 +237,99 @@ test("6 默认四个任务槽，第五个等名额释放才启动原生会话", 
     release(f, d, "四"),
     release(f, e, "五"),
   ]);
+});
+
+test("不支持并行的成员先回私聊再做任务，等待期间另一成员可以占用唯一任务槽", async () => {
+  const f = setup(barrier({ parallel: false }), { taskConcurrency: 1 });
+  const chat = f.dispatch.openDm("a");
+  const dm = f.dispatch.sendMessage(chat.id, "私聊");
+  await waiting(f, dm);
+  const task = f.work("排队任务");
+  const peer = f.work("另一成员的任务", "b");
+  await waiting(f, peer);
+  expect(f.store.runs.get(task.runId)).toMatchObject({ state: "queued", end_reason: null });
+  expect(f.store.sessions.get(task.sessionId)?.native_session).toBeNull();
+  await release(f, dm, "私聊");
+  expect(f.store.runs.get(task.runId)?.state).toBe("queued");
+  await release(f, peer, "另一成员的任务");
+  await waiting(f, task);
+  await release(f, task, "排队任务");
+});
+
+test("串行成员的私聊积压时轮转给其他会话，私聊内部仍保持 FIFO", async () => {
+  const f = setup(barrier({ parallel: false }));
+  const task = f.work("当前任务");
+  await waiting(f, task);
+  const chat = f.dispatch.openDm("a");
+  const dm1 = f.dispatch.sendMessage(chat.id, "私聊一");
+  const dm2 = f.dispatch.sendMessage(chat.id, "私聊二");
+  const next = f.work("后续任务");
+  await release(f, task, "当前任务");
+  await waiting(f, dm1);
+  expect(f.store.runs.get(next.runId)?.state).toBe("queued");
+  await release(f, dm1, "私聊一");
+  await waiting(f, next);
+  expect(f.store.runs.get(dm2.runId)?.state).toBe("queued");
+  await release(f, next, "后续任务");
+  await waiting(f, dm2);
+  await release(f, dm2, "私聊二");
+});
+
+test.each([true, false])(
+  "按会话运行时执行；旧会话可并行=%s 时仍尊重另一侧能力",
+  async (parallel) => {
+    const native = barrier({ parallel });
+    const codex = barrier({ parallel: !parallel }, "codex");
+    const f = setup(native, {}, [codex]);
+    const chat = f.dispatch.openDm("a");
+    const dm = f.dispatch.sendMessage(chat.id, "旧会话");
+    await waiting(f, dm);
+    f.store.members.update({ ...member("a"), runtime_kind: "codex" });
+    const task = f.work("新会话");
+    const next = f.dispatch.sendMessage(chat.id, "继续旧会话");
+    expect(next.sessionId).toBe(dm.sessionId);
+    await release(f, dm, "旧会话");
+    await waiting(f, task);
+    expect(f.store.sessions.get(task.sessionId)?.runtime_kind).toBe("codex");
+    expect(f.store.runs.get(next.runId)?.state).toBe("queued");
+    await codex.approve(ref(f.store, task), "新会话", true);
+    await waitForEnd(f, task);
+    await waiting(f, next);
+    await release(f, next, "继续旧会话");
+    expect(
+      f.events
+        .filter((e) => e.type === "run.started" || e.type === "run.ended")
+        .map((e) => [e.type, e.runId]),
+    ).toEqual([
+      ["run.started", dm.runId],
+      ["run.ended", dm.runId],
+      ["run.started", task.runId],
+      ["run.ended", task.runId],
+      ["run.started", next.runId],
+      ["run.ended", next.runId],
+    ]);
+  },
+);
+
+test("私聊沿用已注册的会话运行时；缺少实际适配器时拒绝投递且不写消息", async () => {
+  const f = setup();
+  const chat = f.dispatch.openDm("a");
+  const dm = f.dispatch.sendMessage(chat.id, "先建立会话");
+  await waitForEnd(f, dm);
+  f.store.members.update({ ...member("a"), runtime_kind: "codex" });
+  await waitForEnd(f, f.dispatch.sendMessage(chat.id, "继续已注册的会话"));
+  const session = f.store.sessions.get(dm.sessionId);
+  if (!session) throw new Error("测试会话缺失");
+  f.store.sessions.update({ ...session, runtime_kind: "codex" });
+  f.store.members.update(member("a"));
+  expect(() => f.dispatch.sendMessage(chat.id, "不能接受")).toThrow("运行时尚未注册");
+  expect(f.store.messages.dmAfter(chat.id, undefined, 10).map((message) => message.body)).toEqual([
+    "先建立会话",
+    "先建立会话",
+    "继续已注册的会话",
+    "继续已注册的会话",
+  ]);
+  await waitForEnd(f, f.work("其他成员继续调度", "b"));
 });
 
 test("7 工具、错误事件只落一行分类摘要；临时片段和原始输出在数据库文件中均找不到", async () => {
@@ -548,7 +649,7 @@ test("审批悬挂时同步关调度、立即关库，迟到事件不能写入�
 });
 
 test("不支持中断的运行时拒绝忙时休眠，关库后流退出时仍会成功释放原生会话", async () => {
-  const f = setup(barrier(false));
+  const f = setup(barrier({ interrupt: false }));
   const receipt = f.dispatch.sendMessage(f.dispatch.openDm("a").id, "等候");
   await waiting(f, receipt);
   const native = ref(f.store, receipt);

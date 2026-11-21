@@ -31,8 +31,14 @@ interface Options {
   onError?: (error: unknown) => void;
 }
 
-interface Queued {
+interface PendingTurn {
   scope: RunScope;
+  adapter: StaffAdapter;
+  parallel: boolean;
+}
+
+interface Queued {
+  turn: PendingTurn;
   message: Message;
 }
 
@@ -53,8 +59,9 @@ export function createDispatch(store: Store, registry: AdapterRegistry, options:
   const finishing = new Map<string, Promise<WorkItem>>();
   const running = new Set<string>();
   const memberCounts = new Map<string, number>();
-  // 每个待执行轮次只保留路由与主键。正文在获得执行槽时按主键读取。
-  const queues = new Map<string, RunScope[]>();
+  const serialMembers = new Set<string>();
+  // 待执行轮次只保留路由、能力与主键；正文在获得执行槽时按主键读取。
+  const queues = new Map<string, PendingTurn[]>();
   let activeTasks = 0;
   let scheduled = false;
 
@@ -89,6 +96,9 @@ export function createDispatch(store: Store, registry: AdapterRegistry, options:
     workItemId: string | null,
     text: string,
   ): Queued {
+    // 已有会话沿用其持久化的运行时，可能与成员当前配置不同。
+    const adapter = registry.get(session.runtime_kind);
+    const { parallel } = adapter.capabilities();
     const message = store.messages.append({
       id: crypto.randomUUID(),
       conversation_id: conversationId,
@@ -110,14 +120,19 @@ export function createDispatch(store: Store, registry: AdapterRegistry, options:
     });
     return {
       message,
-      scope: { memberId: member.id, sessionId: session.id, conversationId, workItemId, runId },
+      turn: {
+        scope: { memberId: member.id, sessionId: session.id, conversationId, workItemId, runId },
+        adapter,
+        parallel,
+      },
     };
   }
 
-  function admit({ scope, message }: Queued) {
+  function admit({ turn, message }: Queued) {
+    const { scope } = turn;
     const pending = queues.get(scope.sessionId);
-    if (pending) pending.push(scope);
-    else queues.set(scope.sessionId, [scope]);
+    if (pending) pending.push(turn);
+    else queues.set(scope.sessionId, [turn]);
     schedule();
     emit({ type: "message.created", message, sessionId: scope.sessionId, runId: scope.runId });
     return { messageId: message.id, runId: scope.runId, sessionId: scope.sessionId };
@@ -139,7 +154,7 @@ export function createDispatch(store: Store, registry: AdapterRegistry, options:
     emit({ type: "run.event", ...scope, event, ...(approval && { approval }) });
   }
 
-  async function execute(scope: RunScope) {
+  async function execute(scope: RunScope, adapter: StaffAdapter) {
     const { memberId, sessionId, conversationId, workItemId, runId } = scope;
     const run = store.runs.get(runId);
     const session = store.sessions.get(sessionId);
@@ -153,7 +168,6 @@ export function createDispatch(store: Store, registry: AdapterRegistry, options:
     let seq = 0;
     try {
       const member = activeMember(store, memberId);
-      const adapter = registry.get(session.runtime_kind);
       const ref = await connectSession(
         store,
         adapter,
@@ -257,20 +271,22 @@ export function createDispatch(store: Store, registry: AdapterRegistry, options:
     await releaseConnection(sessionId);
   }
 
-  async function run(scope: RunScope) {
+  async function run({ scope, adapter, parallel }: PendingTurn) {
     const { sessionId, memberId, workItemId } = scope;
     running.add(sessionId);
+    if (!parallel) serialMembers.add(memberId);
     if (workItemId !== null) activeTasks++;
     try {
       changeBusy(memberId, 1);
       if (signal.aborted) return;
-      await execute(scope);
+      await execute(scope, adapter);
       if (signal.aborted) return;
       if (workItemId !== null && finishRequested.delete(workItemId)) {
         await finalizeWork(workItemId);
       }
     } finally {
       running.delete(sessionId);
+      if (!parallel) serialMembers.delete(memberId);
       if (signal.aborted) void releaseAfterTurn(sessionId).catch(report);
       if (workItemId !== null) activeTasks--;
       changeBusy(memberId, -1);
@@ -283,14 +299,23 @@ export function createDispatch(store: Store, registry: AdapterRegistry, options:
     scheduled = true;
     queueMicrotask(() => {
       scheduled = false;
-      // 一次轮询给每条可运行会话一次机会；wait 中的任务不能挡住后面的私聊。
-      for (const [id, pending] of queues) {
-        const scope = pending[0];
-        if (!scope || running.has(id) || (scope.workItemId !== null && activeTasks >= limit))
+      const drainingMembers = new Set<string>();
+      // 每条会话本轮最多出队一次。轮转会话顺序，避免私聊积压时任务一直得不到执行。
+      for (const [id, pending] of [...queues]) {
+        const turn = pending[0];
+        if (!turn || running.has(id)) continue;
+        const { memberId, workItemId } = turn.scope;
+        if (serialMembers.has(memberId) || drainingMembers.has(memberId)) continue;
+        if (workItemId !== null && activeTasks >= limit) continue;
+        if (!turn.parallel && memberCounts.has(memberId)) {
+          // 已等到任务槽的串行轮次先等该成员空闲，不让本轮后续投递延长等待。
+          drainingMembers.add(memberId);
           continue;
+        }
         pending.shift();
-        if (!pending.length) queues.delete(id);
-        void run(scope).catch(report);
+        queues.delete(id);
+        if (pending.length) queues.set(id, pending);
+        void run(turn).catch(report);
       }
     });
   }
@@ -339,7 +364,6 @@ export function createDispatch(store: Store, registry: AdapterRegistry, options:
       const memberId = store.dispatch.dmRecipient(conversationId);
       if (!memberId) throw new Error("私聊不存在或没有唯一接收人");
       const member = activeMember(store, memberId);
-      registry.get(member.runtime_kind);
       const cwd = dmDirectory(store, member);
       const queued = store.dispatch.transaction(() => {
         const session = sessionFor(store, member, "dm", conversationId, cwd);
@@ -350,7 +374,6 @@ export function createDispatch(store: Store, registry: AdapterRegistry, options:
     startWork(input: StartWorkInput) {
       signal.throwIfAborted();
       const member = activeMember(store, input.memberId);
-      registry.get(member.runtime_kind);
       const { item, queued } = createWork(store, input, (work) => {
         const session = sessionFor(store, member, "task", work.id, work.dir);
         return queueRow(member, session, work.conversation_id, work.id, work.goal);
