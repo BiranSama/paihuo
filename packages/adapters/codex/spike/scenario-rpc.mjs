@@ -42,13 +42,66 @@ const safeMethod = new Set([
   "mcpServer/startupStatus/updated",
   "error",
 ]);
+// 固定版 ErrorNotification 的公开枚举。其余字段可以包含原文、地址或账号信息。
+const publicErrors = new Set([
+  "contextWindowExceeded",
+  "sessionBudgetExceeded",
+  "usageLimitExceeded",
+  "rateLimitExceeded",
+  "flexUnavailable",
+  "serverOverloaded",
+  "modelNotFound",
+  "policyCapacityUnavailable",
+  "cyberPolicy",
+  "misalignmentPolicyViolation",
+  "tooManyDenials",
+  "internalServerError",
+  "unauthorized",
+  "badRequest",
+  "threadRollbackFailed",
+  "sandboxError",
+  "other",
+]);
+const variantErrors = new Set([
+  "httpConnectionFailed",
+  "responseStreamConnectionFailed",
+  "responseStreamDisconnected",
+  "responseTooManyFailedAttempts",
+  "activeTurnNotSteerable",
+]);
+export function errorNotification(params) {
+  const info = params?.error?.codexErrorInfo;
+  let category = typeof info === "string" && publicErrors.has(info) ? info : "unknown";
+  let http = "unknown";
+  if (info && typeof info === "object" && Object.keys(info).length === 1) {
+    const [key] = Object.keys(info);
+    if (variantErrors.has(key)) {
+      category = key;
+      const status = info[key]?.httpStatusCode;
+      if ([401, 403, 429].includes(status)) http = String(status);
+      else if (Number.isInteger(status) && status >= 500 && status < 600) http = "5xx";
+    }
+  }
+  return `codexErrorInfo=${category}, http=${http}, willRetry=${typeof params?.willRetry === "boolean" ? String(params.willRetry) : "unknown"}`;
+}
+function startupCategory(bytes) {
+  if (!bytes.length) return "empty-stderr";
+  const text = bytes.toString("utf8");
+  if (/unknown variant/i.test(text) && /\bhistory\.persistence\b/i.test(text))
+    return "history-enum";
+  if (/unknown variant/i.test(text)) return "config-enum";
+  if (/(?:unexpected argument|unrecognized (?:subcommand|option))/i.test(text)) return "argument";
+  if (/(?:TOML parse error|invalid type|failed to parse config)/i.test(text))
+    return "config-syntax";
+  return "other-stderr";
+}
 export function openRpc(exe, args, cwd, env, allowFixedTool = false, approvalTarget = null) {
   const child = spawn(exe, args, {
     cwd,
     env,
     shell: false,
     windowsHide: true,
-    stdio: ["pipe", "pipe", "ignore"],
+    stdio: ["pipe", "pipe", "pipe"],
   });
   const pending = new Map();
   const events = [];
@@ -65,6 +118,12 @@ export function openRpc(exe, args, cwd, env, allowFixedTool = false, approvalTar
     compactions = 0;
   const toolsByTurn = new Set();
   const latestTokenTotals = new Map();
+  let initialized = false;
+  let startupBytes = Buffer.alloc(0);
+  child.stderr.on("data", (chunk) => {
+    if (!initialized && startupBytes.length < 8192)
+      startupBytes = Buffer.concat([startupBytes, chunk.subarray(0, 8192 - startupBytes.length)]);
+  });
   const stop = (reason) => {
     lastFailure ??= new ProbeStop(
       `${reason instanceof ProbeStop ? reason.message : "原生协议进程结束或消息格式异常。"} 已提交原生动作 ${actions}。事件顺序 ${trace.join(" → ")}`,
@@ -77,12 +136,21 @@ export function openRpc(exe, args, cwd, env, allowFixedTool = false, approvalTar
   const exited = new Promise((resolve) =>
     child.on("close", (code) => {
       closed = true;
-      if (pending.size || waiters.size) stop(new ProbeStop("原生进程先于请求/通知退出。"));
+      if (pending.size || waiters.size) {
+        const diagnostic = initialized
+          ? ""
+          : ` startup=${startupCategory(startupBytes)}, exit=${Number.isInteger(code) ? code : "unknown"}。`;
+        stop(new ProbeStop(`原生进程先于请求/通知退出。${diagnostic}`));
+      }
+      startupBytes = Buffer.alloc(0);
       resolve(code);
     }),
   );
   child.on("error", stop);
-  child.stdin.on("error", stop);
+  child.stdin.on("error", (error) => {
+    if (!initialized && ["EPIPE", "EOF", "ERR_STREAM_DESTROYED"].includes(error.code)) return;
+    stop(error);
+  });
   const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
   child.stdout.on("data", (chunk) => {
     bytes += chunk.length;
@@ -132,6 +200,10 @@ export function openRpc(exe, args, cwd, env, allowFixedTool = false, approvalTar
         const task = pending.get(frame.id);
         requireThat(task, "响应 ID 未匹配。");
         pending.delete(frame.id);
+        if (task.method === "initialize" && typeof frame.result?.userAgent === "string") {
+          initialized = true;
+          startupBytes = Buffer.alloc(0);
+        }
         if (
           frame.error &&
           ["turn/steer", "turn/interrupt", "thread/resume"].includes(task.method) &&
@@ -166,7 +238,9 @@ export function openRpc(exe, args, cwd, env, allowFixedTool = false, approvalTar
               : ""),
         );
       if (frame.method === "error") {
-        stop(new ProbeStop("出现原生错误或重连通知，本次停止。"));
+        stop(
+          new ProbeStop(`出现原生错误或重连通知，本次停止。${errorNotification(frame.params)}。`),
+        );
         return;
       }
       if (["item/started", "item/completed"].includes(frame.method)) {

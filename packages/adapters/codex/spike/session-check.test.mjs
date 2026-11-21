@@ -4,6 +4,7 @@ import { expect, it } from "vitest";
 import { summarizeClaude } from "../../claude-code/spike/session-check.mjs";
 import { offlineCases } from "./scenario-fixture.mjs";
 import { quotaSnapshot } from "./scenario-observations.mjs";
+import { errorNotification, openRpc } from "./scenario-rpc.mjs";
 import {
   appServerEnv,
   closeLedger,
@@ -14,7 +15,67 @@ import {
   verifyRoster,
 } from "./scenarios.mjs";
 import { execState, protocolState } from "./session-check.mjs";
-import { cleanEnv, liveArgs, ProbeStop } from "./session-common.mjs";
+import { cleanEnv, liveArgs, ProbeStop, withScratch } from "./session-common.mjs";
+
+it("握手前退出只暴露固定错误类别和退出码", async () => {
+  await withScratch(async (root, cwd) => {
+    const c = openRpc(
+      process.execPath,
+      [
+        "-e",
+        "process.stderr.write('synthetic-private-location unknown variant for hist');setTimeout(()=>{process.stderr.write('ory.persistence');process.exitCode=9},10)",
+      ],
+      cwd,
+      cleanEnv(root),
+    );
+    try {
+      const reason = await c.request("initialize").then(
+        () => "",
+        (error) => error.message,
+      );
+      expect(reason).toContain("startup=history-enum, exit=9");
+      expect(reason).not.toContain("synthetic-private-location");
+    } finally {
+      await c.close();
+    }
+  });
+});
+
+it("运行期错误只保留协议枚举、选定 HTTP 类别与重试标志", () => {
+  const info = (code, retry) =>
+    errorNotification({
+      error: {
+        codexErrorInfo: code,
+        message: "synthetic-private-location",
+        additionalDetails: "synthetic-private-token",
+      },
+      willRetry: retry,
+    });
+  expect(info("unauthorized", false)).toBe(
+    "codexErrorInfo=unauthorized, http=unknown, willRetry=false",
+  );
+  for (const [native, expected] of [
+    [401, "401"],
+    [403, "403"],
+    [429, "429"],
+    [503, "5xx"],
+    [418, "unknown"],
+  ]) {
+    expect(info({ responseStreamDisconnected: { httpStatusCode: native } }, true)).toBe(
+      `codexErrorInfo=responseStreamDisconnected, http=${expected}, willRetry=true`,
+    );
+  }
+  for (const code of [
+    "synthetic-private-location",
+    { "synthetic-private-token": {} },
+    { responseStreamDisconnected: {}, private: {} },
+    null,
+  ]) {
+    expect(info(code, "synthetic-private-token")).toBe(
+      "codexErrorInfo=unknown, http=unknown, willRetry=unknown",
+    );
+  }
+});
 
 it("记暗号失败后仅归档本次线程，必要时重连且不发新轮", async () => {
   const cwd = process.cwd();

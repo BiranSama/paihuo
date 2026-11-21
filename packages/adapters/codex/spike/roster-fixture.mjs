@@ -28,18 +28,23 @@ export async function offlineRoster(exe, argv) {
     );
     const rosters = [];
     const base = scenarioBaseArgs(argv);
-    const rejected = command(
+    const rejected = openRpc(
       exe,
       [...base, "-c", 'history.persistence="save-none"', "app-server", "--listen", "stdio://"],
       project,
       env,
     );
-    requireThat(
-      rejected.status === 1 &&
-        /unknown variant/i.test(rejected.stderr) &&
-        /history/i.test(rejected.stderr),
-      "旧 history.persistence 负控未按预期拒绝。",
-    );
+    let rejectedHistory = false;
+    try {
+      await rejected.request("initialize", {
+        clientInfo: { name: "paihuo_probe", version: "0.1.0" },
+      });
+    } catch (error) {
+      rejectedHistory = error?.message.includes("startup=history-enum, exit=1。") === true;
+    } finally {
+      await rejected.close();
+    }
+    requireThat(rejectedHistory, "旧 history.persistence 负控未按预期拒绝。");
     const fixedArgs = [script, "--mark", marker];
     const fixedSpec = {
       command: process.execPath,
