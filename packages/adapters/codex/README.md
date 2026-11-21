@@ -96,24 +96,24 @@ node $p --live auth --exe $exe --policy-reviewed
 node $p --live smoke --exe $exe --policy-reviewed --included-only --before-used-percent $before --used-turns $spent
 ```
 
-smoke 用 `exec --json` 向本地 CLI 发一条固定消息，仅接受一条原生轮及符合前言的固定文本标记。使用临时项目、只读沙箱、禁审批升级、忽略用户配置和规则、临时会话，关闭 shell、Code Mode、多代理、插件、hooks、联网搜索等功能。模型指定 `gpt-6.2-sol`。驱动遇到工具、重试、失败或未知事件即停止，报告只含白名单计数和退出状态。该 CLI 没有由通用开关禁用全部内置工具的契约。只读沙箱、已禁用的工具入口、实际有无工具事件分别记录。App Server 在该版本缺少 exec 的 `--ignore-user-config`，因此只在空白临时原生配置里做零轮传输。后续认证 App Server 路线需建立可核对的配置隔离，保留官方登录方式。[驱动](spike/session-check.mjs) · [App Server](https://developers.openai.com/codex/app-server) · [非交互运行](https://developers.openai.com/codex/noninteractive) · [当前测试版本 shell 注册](https://github.com/openai/codex/blob/rust-v0.167.0/codex-rs/core/src/tools/spec_plan.rs#L1177-L1206)
+smoke 用 `exec --json` 向本地 CLI 发一条固定消息，仅接受一条原生轮及符合前言的固定文本标记。使用临时项目、只读沙箱、禁审批升级、忽略用户配置和规则、临时会话，关闭 shell、Code Mode、多代理、插件、hooks、联网搜索等功能。模型指定 `gpt-6.2-sol`。驱动遇到工具、重试、失败或未知事件即停止，报告只含白名单计数和退出状态。该 CLI 没有由通用开关禁用全部内置工具的契约。只读沙箱、已禁用的工具入口、实际有无工具事件分别记录。App Server 在该版本缺少 exec 的 `--ignore-user-config`，独立的零轮传输命令使用空白临时原生配置。下述第二批受控场景通过独立配置清单核对后使用原生登录。[驱动](spike/session-check.mjs) · [App Server](https://developers.openai.com/codex/app-server) · [非交互运行](https://developers.openai.com/codex/noninteractive) · [当前测试版本 shell 注册](https://github.com/openai/codex/blob/rust-v0.167.0/codex-rs/core/src/tools/spec_plan.rs#L1177-L1206)
 
 程序开始 smoke 前独占创建共享 Git 管理目录内的私有预留标记。一个 checkout 及其余 linked worktree 共享该预留。只写数字 1，不写账号或会话数据。任何已启动的失败都继续计入，驱动不会自动重发。每个原生步骤均在 Windows kill-on-close Job 内，新的临时目录在退出后按本次创建路径回收。[预算和进程管理](spike/session-common.mjs) · [Windows Job](spike/job.ps1)
 
-| 项目          | 当前结论和观察                                                                                                                                                | 对应命令或后续取证                                         |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| 1 路线        | 已验证原生 ChatGPT 登录。首次 exec 尝试被控制器中止，App Server 的真实模型对照仍待验。                                                                        | `--live transport`、`--live smoke`                         |
-| 2 启动与前言  | 首次实际 exec 消息已发出，出现未识别的原生 item，未验证前言。                                                                                                 | `--live smoke` 的独立 `developer_instructions` 与固定标记  |
-| 3 流式事件    | 真实 exec 在未接受的 item 处停止，原始事件未保存，其类型、文本、工具活动均无法还原。合成对照已补脱敏类型记录。                                                | `--offline protocol`、`--live smoke`、未来 App Server 通知 |
-| 4 恢复        | 零轮传输探针有无效 ID 分类，须明确指向 thread/session/rollout 不存在。成功恢复和跨进程暗号待验。                                                              | `--live transport`；未来重启后 `thread/resume`             |
-| 5 中断        | 协议有 `turn/interrupt`，实际回执、文件及会话后续可用性待验。                                                                                                 | 未来在临时会话中按原 turnId 中断并查终态                   |
-| 6 引导        | 协议有 `turn/steer`，实际是否在同一轮发挥作用待验。                                                                                                           | 未来锁定 `expectedTurnId` 比对                             |
-| 7 并行        | 合成 threadId 分流通过；两原生会话文件及事件隔离待验。                                                                                                        | `--offline protocol`；后续双临时项目并行                   |
-| 8 权限        | 有协议与合成拒绝回执；未观察原生审批。Q-014 A 待验。                                                                                                          | 对隔离兄弟临时目录的写请求只答拒绝并核对结果               |
-| 9 成员工具    | 本机固定 MCP 服务 stdio 握手、发现、合法调用、拒绝不符参数均已验证。Codex 原生工具调用待验。                                                                  | `--offline mcp`；[固定 MCP 服务](spike/fixed-mcp.mjs)      |
-| 10 计费与认证 | 同一 10080 分钟窗口测试前已用 70%，测试后 71%。普通订阅额度可用，付费点数不可用，余额为零，老板确认自动充值关闭。此窗口由并发会话共享，单次实际用量无法归因。 | `--live auth`，同一额度窗口的前后读数                      |
-| 11 资源       | 已验证 Windows Job 关闭后合成后代确实退出。原生会话空闲、工作时的内存及结束回收待验。                                                                         | `--offline job`；后续只采样本次进程树                      |
-| 12 压缩       | 首批预算记 1，未观察到自然压缩。Q-004 保留。                                                                                                                  | 后续正常短轮次被动观察，最多 30 轮                         |
+| 项目          | 当前结论和观察                                                                                                                                              | 对应命令或后续取证                                    |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| 1 路线        | 已验证 ChatGPT 登录。exec 在未知 item 处停止。App Server 已建真实线程并发起一轮，两个入口均未取得模型终稿。                                                 | 首批 exec 与本次 steer                                |
+| 2 启动与前言  | App Server 真实线程通过模型、provider、只读沙箱、审批及 cwd 回包核对。未取得模型答复，无法验证前言效果。                                                    | 本次 steer 的 thread/start、turn/start                |
+| 3 流式事件    | App Server 在活动轮收到 responseStreamDisconnected，willRetry 为 true，未提供可辨识的 HTTP 类别。停止前未观察到模型输出；首批 exec 的原始未知 item 未保存。 | 一次受控 App Server 流，未取得完整响应                |
+| 4 恢复        | 零轮传输探针有无效 ID 分类，须明确指向 thread/session/rollout 不存在。成功恢复和跨进程暗号待验。                                                            | `--live transport`；未来重启后 `thread/resume`        |
+| 5 中断        | 协议有 `turn/interrupt`，实际回执、文件及会话后续可用性待验。                                                                                               | 未来在临时会话中按原 turnId 中断并查终态              |
+| 6 引导        | 已在同一真实线程提交 turn/start 和 turn/steer，各记一次。随后断流并暂停，无终稿可以判断引导效果。                                                           | 不重发 steer；能力待验                                |
+| 7 并行        | 合成 threadId 分流通过；两原生会话文件及事件隔离待验。                                                                                                      | `--offline protocol`；后续双临时项目并行              |
+| 8 权限        | 有协议与合成拒绝回执；未观察原生审批。Q-014 A 待验。                                                                                                        | 对隔离兄弟临时目录的写请求只答拒绝并核对结果          |
+| 9 成员工具    | 本机固定 MCP 服务 stdio 握手、发现、合法调用、拒绝不符参数均已验证。Codex 原生工具调用待验。                                                                | `--offline mcp`；[固定 MCP 服务](spike/fixed-mcp.mjs) |
+| 10 计费与认证 | 首批 exec 的七天共享窗口为 70% → 71%，本次 steer 在同一计量窗口前后均为 77%。普通订阅用量可用。整数读数不能计出单场景消耗。                                 | 原生配额及宿主普通用量预检                            |
+| 11 资源       | 已验证 Windows Job 关闭后合成后代确实退出。原生会话空闲、工作时的内存及结束回收待验。                                                                       | `--offline job`；后续只采样本次进程树                 |
+| 12 压缩       | 两次真实模型阶段均未观察到自然压缩；上限内继续被动观察。Q-004 保留。                                                                                        | 不为压缩追加轮次                                      |
 
 | AdapterCapabilities | 真实支持状态 | 尚缺证据                                     |
 | ------------------- | ------------ | -------------------------------------------- |
@@ -127,6 +127,8 @@ smoke 用 `exec --json` 向本地 CLI 发一条固定消息，仅接受一条原
 T-007 仍等关卡。App Server 保留为候选。应以实际控制活跃轮、审批及持久化的结果决定正式适配器；单轮 exec 的结果只能作为对照，无法据此给六项能力填布尔值。
 
 ### 第二批 App Server 验证命令
+
+组长已执行 `steer`。原生会话接受两个宿主动作，随后报告响应流断开及准备重连。控制器在未知 HTTP 类别、无模型输出时停止，整批暂停。此时无法判断新指令能否改变同一轮的答复。
 
 `--offline scenarios` 在 Node 实现的假 App Server 上实际收发 stdio 消息。另用同版本官方二进制的 `native-roster` 样例，在没有账号的临时配置里放置一个只写启动标记的 MCP。两次读取有效配置时分别看到该服务启用、禁用，均未触发标记；直接运行同一程序的阳性对照触发标记。只在本机回环的独立 Responses 模拟中，关闭 view_image、goals 和 experimental_request_user_input 后，技术员观察到发给模拟服务的工具清单为空。该模拟也观察到原生轮开始前可能出现模型元数据诊断。驱动仅接受已核实的固定版本、固定模型、固定原文和位置，其他未知项输出枚举类别并中止。首次真实 exec 究竟遇到哪种 item 仍未知。[受控场景](spike/scenarios.mjs) · [回环前置检查](spike/roster-fixture.mjs) · [执行事件定义](https://github.com/openai/codex/blob/rust-v0.167.0/codex-rs/exec/src/exec_events.rs)
 
