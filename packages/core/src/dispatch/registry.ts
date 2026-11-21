@@ -1,5 +1,12 @@
 import type { RuntimeKind, StaffAdapter } from "@paihuo/shared/staff";
 
+export class MissingAdapterError extends Error {
+  constructor() {
+    super("成员的运行时尚未注册");
+    this.name = "MissingAdapterError";
+  }
+}
+
 export class AdapterRegistry {
   private readonly adapters = new Map<RuntimeKind, StaffAdapter>();
 
@@ -14,7 +21,7 @@ export class AdapterRegistry {
 
   get(kind: RuntimeKind): StaffAdapter {
     const adapter = this.adapters.get(kind);
-    if (!adapter) throw new Error("成员的运行时尚未注册");
+    if (!adapter) throw new MissingAdapterError();
     return adapter;
   }
 }

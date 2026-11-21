@@ -1,4 +1,5 @@
 import type { Store } from "../store";
+import { interruptedRunNotice } from "../store/dispatch";
 import type { DispatchEvent } from "./events";
 
 export function recoverInterrupted(store: Store, emit: (event: DispatchEvent) => void) {
@@ -15,7 +16,7 @@ export function recoverInterrupted(store: Store, emit: (event: DispatchEvent) =>
         work_item_id,
         author_kind: "system",
         author_id: null,
-        body: "上次的工作被中断，状态待核对",
+        body: interruptedRunNotice,
         created_at: new Date().toISOString(),
       });
       store.dispatch.markRecoveryNotified(session_id, conversation_id, work_item_id);

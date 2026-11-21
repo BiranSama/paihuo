@@ -293,6 +293,42 @@ test("同一成员的活跃和休眠互斥，归档释放；不同成员、种�
   expect(store.sessions.get(session.id)?.state).toBe("archived");
 });
 
+test("工作与活跃成员按排他 ID 分页，一页只读取有限行", () => {
+  const store = open(directory());
+  seed(store);
+  const goal = "x".repeat(16 * 1024);
+  const ids = Array.from({ length: 65 }, (_, index) => `row-${String(index).padStart(2, "0")}`);
+  store.dispatch.transaction(() => {
+    for (const id of [...ids].reverse()) {
+      store.members.insert({ ...member, id });
+      store.workItems.insert({
+        id,
+        title: "工作",
+        goal,
+        owner_member_id: id,
+        status: "running",
+        conversation_id: chat.id,
+        dir: "work",
+        created_at: time,
+        updated_at: time,
+      });
+    }
+    store.members.update({ ...member, status: "archived", archived_at: time });
+  });
+  const first = store.dispatch.pageWork();
+  expect(first.map((item) => item.id)).toEqual(ids.slice(0, 51));
+  expect(first[0]?.goal).toBe(goal);
+  expect(store.dispatch.pageWork("row-50").map((item) => item.id)).toEqual(ids.slice(51));
+  expect(store.dispatch.pageMemberIds()).toEqual(ids.slice(0, 51));
+  expect(store.dispatch.pageMemberIds("row-50", 1)).toEqual(["row-51"]);
+  expect(store.dispatch.pageWork("row-63' OR 1=1 --", 1).map((item) => item.id)).toEqual([
+    "row-64",
+  ]);
+  expect(store.dispatch.pageMemberIds("row-64")).toEqual([]);
+  expect(() => store.dispatch.pageWork(undefined, 101)).toThrow(RangeError);
+  expect(() => store.dispatch.pageMemberIds(undefined, 0)).toThrow(RangeError);
+});
+
 test("一万条消息按会话和排他游标双向取页，实际预编译查询以索引和 LIMIT 限定读取", () => {
   const dir = directory();
   const initial = open(dir);
