@@ -127,6 +127,24 @@ export interface StaffAdapter {
 | `request.answer` | 回答一条待确认的请求（如成员发起的"创建成员"） |
 | `system.info` | 版本、数据目录、已检测到的 harness、内存占用 |
 
+#### 已实现的命令与回包（T-010）
+
+请求使用 `{id, method, params?}`，成功回包使用 `{id, result}`。错误回包使用 `{id, error: {code, message}}`；请求缺少可用 ID 时回包中的 ID 为 `null`。`system.info` 保留 T-001 的字段。所有命令的参数与返回值见[共享类型](../packages/shared/src/api.ts)。
+
+| 命令 | 参数与结果 |
+| --- | --- |
+| `member.list` | 可不传参数，或传列表游标和页长。返回在职成员及其活动状态，省略运行时私有配置。 |
+| `conversation.open` | 传 `memberId`，返回私聊和最近一页消息。 |
+| `message.page` | 传 `conversationId`、方向 `before` 或 `after`，可选 `cursor`、`limit`。游标为排他的消息序号，每页默认及上限为 50，两个方向均按序号升序返回。`nextCursor` 为 `null` 时，该方向已读完。 |
+| `message.send` | 传 `conversationId` 和 `text`。落库并入队后立即返回 `accepted: true`、`messageId`、`runId`、`sessionId`。运行过程由事件通知。真实适配器接入前向该成员发送会得到 `ADAPTER_NOT_READY`。 |
+| `work.list`、`work.get` | 前者分页返回工作项；后者按 `workId` 返回 `work`、最近的运行事件摘要 `events` 和该项的系统恢复提示 `notices`，后两组分别最多 50 条。 |
+
+两个列表命令使用可选的 `{cursor, limit}`，默认和最大页长均为 50。列表按 ID 升序返回，`nextCursor` 为下一次请求的排他游标，取值为 `null` 表示已到列表末尾。
+
+成员管理、休眠唤醒、答复待确认请求在参数合法时返回 `NOT_IMPLEMENTED`，分别由 T-012、T-009、T-013 接续。未知方法返回 `UNKNOWN_METHOD`，参数错误返回 `INVALID_PARAMS`。这些错误保留连接。
+
+WebSocket 单帧上限为 1 MiB，发送消息正文上限为 16 KiB，单个推送事件上限为 64 KiB。分页同时遵守行数和字节限制。单条历史消息的正文超过页预算时，通过 `truncated: true` 标明截短，数据库保留原文。
+
 ### 2.2 事件（第 1 期）
 
 | 事件 | 含义 |
@@ -138,6 +156,8 @@ export interface StaffAdapter {
 | `member.status` | 成员状态变化：空闲、工作中、休眠 |
 | `work.updated` | 工作项状态变化 |
 | `request.created` | 出现一条需要老板确认的请求 |
+
+客户端完成 WebSocket 鉴权后，发送首个命令完成订阅初始化。现有桌面客户端以 `system.info` 开始；服务端先回首个成功命令的结果，再按序投递初始化期间暂存的事件。每条待初始化连接最多暂存 128 个事件、共 1 MiB；超限时以 1013 关闭连接。T-010 的事件格式为 `{event, data}`，超出字节预算的事件带 `truncated: true`。保留的消息或运行 ID 可用于后续查询。原生适配器的审批请求目前随 `run.event` 转发；`request.created` 已定义类型，待成员请求流程接入。
 
 第 2 期起增加：`message.send` 的 `disposition`（`queue` | `guide` | `interrupt`）、
 `decision.*` 系列。第 3 期起增加群相关命令。新增或改动必须同步更新本文和 `packages/shared`。
