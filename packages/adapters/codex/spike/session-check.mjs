@@ -5,6 +5,15 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { checkMcp } from "./fixed-mcp.mjs";
+import { offlineRoster } from "./roster-fixture.mjs";
+import { offlineCases } from "./scenario-fixture.mjs";
+import {
+  allowances,
+  appServerEnv,
+  disabledFeatures,
+  nativeCase,
+  telemetrySettings,
+} from "./scenarios.mjs";
 import {
   checkedExe,
   cleanEnv,
@@ -19,22 +28,9 @@ import {
   withScratch,
 } from "./session-common.mjs";
 
-const disabled = [
-  "shell_tool",
-  "code_mode",
-  "code_mode_host",
-  "multi_agent",
-  "multi_agent_v2",
-  "apps",
-  "plugins",
-  "plugin_hooks",
-  "hooks",
-  "image_generation",
-  "apply_patch_freeform",
-  "in_app_browser",
-];
-const flags = disabled.flatMap((name) => ["--disable", name]);
+const flags = disabledFeatures.flatMap((name) => ["--disable", name]);
 const settings = [
+  ...telemetrySettings.flatMap((setting) => ["-c", setting]),
   "-c",
   'web_search="disabled"',
   "-c",
@@ -43,6 +39,8 @@ const settings = [
   "project_doc_max_bytes=0",
   "-c",
   'model_provider="openai"',
+  "-c",
+  "tools.experimental_request_user_input.enabled=false",
 ];
 const execArgs = [
   ...flags,
@@ -79,6 +77,9 @@ const stages = [
   "--offline protocol",
   "--offline mcp",
   "--offline job",
+  "--offline scenarios",
+  "--offline native-roster --exe PATH",
+  "--live scenarios --case NAME --exe PATH --policy-reviewed --included-only --before-used-percent N --used-turns N",
   "--live transport --exe PATH --policy-reviewed",
   "--live auth --exe PATH --policy-reviewed",
   "--live smoke --exe PATH --policy-reviewed --included-only --before-used-percent N --used-turns N",
@@ -127,16 +128,60 @@ export function execState() {
   let turns = 0;
   let completed = false;
   let matched = false;
+  let finals = 0;
+  let metadataWarning = false;
+  const events = [];
   return (frame) => {
+    const standard = [
+      "thread.started",
+      "turn.started",
+      "turn.completed",
+      "item.started",
+      "item.updated",
+      "item.completed",
+      "error",
+      "turn.failed",
+    ];
+    const items = [
+      "agent_message",
+      "reasoning",
+      "error",
+      "command_execution",
+      "file_change",
+      "mcp_tool_call",
+      "web_search",
+      "todo_list",
+    ];
+    const category = standard.includes(frame.type) ? frame.type : "unknown-event";
+    const item = frame.item
+      ? items.includes(frame.item.type)
+        ? frame.item.type
+        : "unknown-item"
+      : null;
+    if (events.length < 32) events.push(item ? `${category}/${item}` : category);
+    const diagnostic = `。事件顺序 ${events.join(" → ")}，已开始轮数 ${turns}`;
     requireThat(!completed, "原生终态后出现额外事件。");
     if (frame.type === "thread.started") threads++;
     else if (frame.type === "turn.started") turns++;
     else if (["item.started", "item.updated", "item.completed"].includes(frame.type)) {
+      if (
+        turns === 0 &&
+        threads === 1 &&
+        !metadataWarning &&
+        frame.type === "item.completed" &&
+        frame.item?.type === "error" &&
+        frame.item.message ===
+          "Model metadata for `gpt-6.2-sol` not found. Defaulting to fallback metadata; this can degrade performance and cause issues."
+      ) {
+        metadataWarning = true;
+        return;
+      }
       requireThat(
         ["agent_message", "reasoning"].includes(frame.item?.type),
-        "出现工具或预期外项目，停止并核对额度。",
+        `出现工具或预期外项目，停止并核对额度${diagnostic}`,
       );
       if (frame.type === "item.completed" && frame.item.type === "agent_message") {
+        requireThat(++finals === 1, `存在多个最终文本，停止${diagnostic}`);
         matched = frame.item.text?.trim() === "PAIHUO_OK";
       }
     } else if (frame.type === "turn.completed") {
@@ -149,11 +194,12 @@ export function execState() {
         preambleMatched: true,
         nativeTurns: 1,
         toolCalls: 0,
+        events,
         inputTokens: tokenCount(frame.usage?.input_tokens),
         outputTokens: tokenCount(frame.usage?.output_tokens),
       };
     } else {
-      throw new ProbeStop("收到重试、失败或未知事件，停止且不重发；本次预留仍计入。");
+      throw new ProbeStop(`收到重试、失败或未知事件，停止且不重发${diagnostic}`);
     }
     requireThat(threads <= 1 && turns <= 1, "发现第二轮或第二个会话，已停止。");
   };
@@ -218,14 +264,23 @@ function subscription(exe, cwd, env) {
 }
 
 async function main(args) {
+  if (
+    args.length === 4 &&
+    args[0] === "--offline" &&
+    args[1] === "native-roster" &&
+    args[2] === "--exe"
+  )
+    return offlineRoster(checkedExe(args[3], "codex.exe"), transportArgs.slice(0, -3));
   if (args.length === 0 || (args.length === 1 && args[0] === "--plan")) {
     return {
       ...plan("Codex", ["App Server stdio", "exec --json"], stages),
       transportArgv: transportArgs,
       smokeArgv: execArgs,
+      scenarioNativeActionLimits: allowances,
     };
   }
   if (args.length === 2 && args[0] === "--offline") {
+    if (args[1] === "scenarios") return offlineCases();
     if (args[1] === "mcp") return checkMcp();
     if (args[1] === "protocol") {
       return withScratch((root, project) => {
@@ -245,10 +300,18 @@ async function main(args) {
   }
   const [mode, stage, ...rest] = args;
   requireThat(
-    mode === "--live" && ["transport", "auth", "smoke"].includes(stage),
+    mode === "--live" && ["transport", "auth", "smoke", "scenarios"].includes(stage),
     "未知命令，请查看 --plan。",
   );
-  const values = liveArgs(rest, stage === "smoke");
+  let scenario;
+  if (stage === "scenarios") {
+    requireThat(
+      rest[0] === "--case" && Object.hasOwn(allowances, rest[1]),
+      "请指定已列出的 --case。",
+    );
+    [, scenario] = rest.splice(0, 2);
+  }
+  const values = liveArgs(rest, stage === "smoke" || stage === "scenarios");
   const exe = checkedExe(values.exe, "codex.exe");
   return withScratch(async (root, project) => {
     const env = cleanEnv(root, stage !== "transport");
@@ -265,9 +328,19 @@ async function main(args) {
       return {
         stage,
         version: "0.167.0",
-        ...(await stream(exe, transportArgs, project, env, stage)),
+        ...(await stream(exe, transportArgs, project, appServerEnv(env), stage)),
       };
     subscription(exe, project, env);
+    if (scenario)
+      return nativeCase(
+        scenario,
+        exe,
+        transportArgs.slice(0, -3),
+        env,
+        project,
+        30 - Number(values["used-turns"]),
+        true,
+      );
     if (stage === "auth")
       return {
         stage,

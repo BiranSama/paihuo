@@ -31,6 +31,7 @@ const topics = [
 ];
 
 export class ProbeStop extends Error {}
+export class CaseObservation extends ProbeStop {}
 export function requireThat(condition, message) {
   if (!condition) throw new ProbeStop(message);
 }
@@ -173,7 +174,7 @@ export function liveArgs(raw, smoke = false) {
 }
 
 // 只写入本仓库未跟踪的 Git 元数据。默认 checkout 和所有 linked worktree 共用同一独占预留。
-export function reserve(harness) {
+function reservationPath(harness) {
   const repo = fileURLToPath(new URL("../../../../", import.meta.url));
   let admin = join(repo, ".git");
   if (lstatSync(admin).isFile()) {
@@ -183,12 +184,40 @@ export function reserve(harness) {
   }
   const common = join(admin, "commondir");
   if (existsSync(common)) admin = resolve(admin, readFileSync(common, "utf8").trim());
-  const marker = join(admin, `T-015-${harness}-smoke.reserved`);
+  return join(admin, `T-015-${harness}-smoke.reserved`);
+}
+export function reserve(harness, details) {
+  const marker = reservationPath(harness);
   try {
-    writeFileSync(marker, "1\n", { flag: "wx" });
+    writeFileSync(marker, details ? `${JSON.stringify(details)}\n` : "1\n", { flag: "wx" });
   } catch {
     throw new ProbeStop("本卡单次 smoke 已预留或账本不可写；停止，由组长核对用量。");
   }
+  return marker;
+}
+function supervisionFailure(args) {
+  if (
+    args[0] === "--live" &&
+    args[1] === "scenarios" &&
+    args[2] === "--case" &&
+    ["steer", "interrupt", "resume", "parallel", "mcp", "resources", "approval", "image"].includes(
+      args[3],
+    )
+  ) {
+    const marker = reservationPath(`codex-${args[3]}`);
+    if (existsSync(marker)) {
+      const [header, ...attempts] = readFileSync(marker, "utf8").trim().split("\n");
+      const { reserved, before } = JSON.parse(header);
+      if (
+        Number.isInteger(reserved) &&
+        Number.isFinite(before) &&
+        attempts.every((v) => v === "1")
+      ) {
+        return `监督中断，已停止。保留账本：预留 ${reserved}，提交动作 ${attempts.length}，before=${before}，after=null。`;
+      }
+    }
+  }
+  return "进程监督或原生探针失败，已关闭 Job；请核对本次预留。";
 }
 
 export function finish(run) {
@@ -224,7 +253,8 @@ export function sessionMain(main, entry) {
       return main(submitted);
     }
     const jobTest = args.length === 2 && args[0] === "--offline" && args[1] === "job";
-    if (args[0] !== "--live" && !jobTest) return main(args);
+    const nativeFixture = args[0] === "--offline" && args[1] === "native-roster";
+    if (args[0] !== "--live" && !jobTest && !nativeFixture) return main(args);
     requireThat(process.platform === "win32", "原生进程监督需要 Windows Job Object。");
     return withScratch((root, project) => {
       const env = cleanEnv(root, true);
@@ -233,33 +263,53 @@ export function sessionMain(main, entry) {
       const packet = Buffer.from(
         JSON.stringify(jobTest ? ["job-cleanup-self-test"] : args),
       ).toString("base64");
-      const result = command(
-        shell,
-        [
-          "-NoLogo",
-          "-NoProfile",
-          "-NonInteractive",
-          "-File",
-          supervisor,
-          process.execPath,
-          fileURLToPath(entry),
-        ],
-        project,
-        env,
-        packet,
-        120000,
-      );
+      let result;
+      try {
+        result = command(
+          shell,
+          [
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-File",
+            supervisor,
+            process.execPath,
+            fileURLToPath(entry),
+          ],
+          project,
+          env,
+          packet,
+          120000,
+        );
+      } catch {
+        throw new ProbeStop(supervisionFailure(args));
+      }
       if (result.status !== 0) {
         // 仅转述我们的已知安全错误；PowerShell/本机可能附带路径或账户上下文。
         let reason;
         try {
           reason = JSON.parse(result.stderr).probeStop;
         } catch {}
-        throw new ProbeStop(
-          typeof reason === "string" ? reason : "进程监督或原生探针失败，已关闭 Job。",
-        );
+        throw new ProbeStop(typeof reason === "string" ? reason : supervisionFailure(args));
       }
       const summary = JSON.parse(result.stdout);
+      if (summary.resources) {
+        const { idle, busy } = summary.resources;
+        const pids = new Set([...idle.pids, ...busy.pids]);
+        delete idle.pids;
+        delete busy.pids;
+        let survivors = 0;
+        for (const pid of pids) {
+          try {
+            process.kill(pid, 0);
+            survivors++;
+          } catch (error) {
+            if (error.code !== "ESRCH") throw error;
+          }
+        }
+        summary.resources.observedPidsAfterExit = survivors;
+        requireThat(survivors === 0, "全批暂停：本次采样的进程在 Job 关闭后仍存在。");
+      }
       if (jobTest) {
         requireThat(
           Number.isSafeInteger(summary.fixturePid) && summary.fixturePid > 0,

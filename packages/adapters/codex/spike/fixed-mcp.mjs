@@ -1,9 +1,12 @@
+import { lstatSync, readFileSync, realpathSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { createInterface } from "node:readline";
+import { setTimeout as pause } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { cleanEnv, command, requireThat, withScratch } from "./session-common.mjs";
 
 const versions = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
-function responder() {
+function responder(getText) {
   let state = "new";
   return (m) => {
     if (m.jsonrpc !== "2.0") throw Error("invalid JSON-RPC");
@@ -49,7 +52,7 @@ function responder() {
       m.params?.name === "fixed" &&
       Object.keys(m.params.arguments ?? {}).length === 0
     ) {
-      return ok({ content: [{ type: "text", text: "PAIHUO_MCP_OK" }] });
+      return ok({ content: [{ type: "text", text: getText() }] });
     }
     return fail(m.method === "tools/call" ? -32602 : -32601);
   };
@@ -105,10 +108,30 @@ export async function checkMcp() {
   });
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url) && process.argv[2] === "--serve") {
-  const reply = responder();
+if (
+  process.argv[1] === fileURLToPath(import.meta.url) &&
+  ["--serve", "--serve-marker", "--serve-delay"].includes(process.argv[2])
+) {
+  const reply = responder(() => {
+    if (process.argv[2] !== "--serve-marker") return "PAIHUO_MCP_OK";
+    const cwd = realpathSync(process.cwd());
+    const file = join(cwd, "fixture.txt");
+    requireThat(
+      dirname(cwd) === realpathSync(process.argv[3]) &&
+        ["project", "second"].includes(basename(cwd)) &&
+        !lstatSync(file).isSymbolicLink() &&
+        realpathSync(file) === file &&
+        lstatSync(file).size === 9,
+      "标记不在本次两个临时项目内。",
+    );
+    const marker = readFileSync(file, "utf8");
+    requireThat(/^[LR][0-9a-f]{8}$/.test(marker), "标记格式无效。");
+    return marker;
+  });
   for await (const line of createInterface({ input: process.stdin, crlfDelay: Infinity })) {
-    const answer = reply(JSON.parse(line));
+    const message = JSON.parse(line);
+    if (process.argv[2] === "--serve-delay" && message.method === "tools/call") await pause(11000);
+    const answer = reply(message);
     if (answer) process.stdout.write(`${JSON.stringify(answer)}\n`);
   }
 }

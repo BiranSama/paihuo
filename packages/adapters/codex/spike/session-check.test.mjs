@@ -2,8 +2,120 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 import { summarizeClaude } from "../../claude-code/spike/session-check.mjs";
+import { offlineCases } from "./scenario-fixture.mjs";
+import { quotaSnapshot } from "./scenario-observations.mjs";
+import {
+  appServerEnv,
+  closeLedger,
+  disabledFeatures,
+  runCase,
+  telemetrySettings,
+  verifyPolicy,
+  verifyRoster,
+} from "./scenarios.mjs";
 import { execState, protocolState } from "./session-check.mjs";
-import { cleanEnv, liveArgs } from "./session-common.mjs";
+import { cleanEnv, liveArgs, ProbeStop } from "./session-common.mjs";
+
+it("未核实的原生线程配置阻止提交第一轮", async () => {
+  const cwd = process.cwd();
+  const thread = { id: "synthetic", cwd, ephemeral: true };
+  const correct = {
+    cwd,
+    thread,
+    model: "gpt-6.2-sol",
+    modelProvider: "openai",
+    approvalPolicy: "never",
+    sandbox: { type: "readOnly", networkAccess: false },
+  };
+  for (const overrides of [
+    { cwd: "other" },
+    { thread: { ...thread, cwd: "other" } },
+    { thread: { ...thread, ephemeral: false } },
+    { model: "other" },
+    { modelProvider: "other" },
+    { approvalPolicy: "on-request" },
+    { sandbox: { type: "workspaceWrite" } },
+    { sandbox: { type: "readOnly", networkAccess: true } },
+  ]) {
+    const methods = [];
+    let used = 0;
+    const client = {
+      request: async (method) => {
+        methods.push(method);
+        return { ...correct, ...overrides };
+      },
+      close: async () => {},
+    };
+    await expect(
+      runCase("steer", { project: cwd, connect: async () => client, charge: () => used++ }),
+    ).rejects.toThrow(/发轮前停止/);
+    expect(methods).toEqual(["thread/start"]);
+    expect(used).toBe(0);
+  }
+});
+
+it("后置额度不可读、窗口改变保留开始读数、动作与原始失败", () => {
+  const before = { usedPercent: 71, resetsAt: 10 };
+  expect(() =>
+    closeLedger(1, 2, before, null, new ProbeStop("原生协议失败。"), new Error()),
+  ).toThrow(/预留 2，已提交动作 1，before=71，after=null。原始阶段：原生协议失败。后置额度/);
+  expect(() => closeLedger(2, 2, before, { usedPercent: 30, resetsAt: 11 }, null, null)).toThrow(
+    /已提交动作 2，before=71，after=30.*窗口不同/,
+  );
+  expect(() => closeLedger(1, 2, before, before, null, null)).not.toThrow();
+});
+
+it("有效 MCP 清单逐项匹配且远程控制仅限子进程禁用", () => {
+  const base = { sentinel: { enabled: false } };
+  const fixed = {
+    command: process.execPath,
+    args: ["fixed"],
+    enabled: true,
+    required: true,
+    enabled_tools: ["fixed"],
+  };
+  const check = (extra) =>
+    verifyRoster(["sentinel"], { ...base, paihuo_t015_fixed: { ...fixed, ...extra } }, ["fixed"]);
+  expect(() => check({})).not.toThrow();
+  for (const extra of [
+    { required: false },
+    { args: ["other"] },
+    { enabled_tools: ["fixed", "extra"] },
+    { env: { unwanted: "fixture" } },
+  ])
+    expect(() => check(extra)).toThrow();
+  for (const roster of [
+    { ...base, extra: { enabled: false } },
+    { other: { enabled: false } },
+    { sentinel: { enabled: true } },
+  ])
+    expect(() => verifyRoster(["sentinel"], roster, null)).toThrow();
+  const env = {};
+  expect(appServerEnv(env).CODEX_INTERNAL_APP_SERVER_REMOTE_CONTROL_DISABLED).toBe("1");
+  expect(env).toEqual({});
+  const argv = [
+    "-c",
+    "tools.experimental_request_user_input.enabled=false",
+    ...telemetrySettings.flatMap((setting) => ["-c", setting]),
+  ];
+  const cfg = {
+    model_provider: "openai",
+    web_search: "disabled",
+    sandbox_mode: "read-only",
+    features: Object.fromEntries(disabledFeatures.map((k) => [k, false])),
+  };
+  expect(() => verifyPolicy(cfg, argv)).not.toThrow();
+  for (const k of disabledFeatures)
+    expect(() =>
+      verifyPolicy({ ...cfg, features: { ...cfg.features, [k]: true } }, argv),
+    ).toThrow();
+  expect(() => verifyPolicy(cfg, [])).toThrow();
+  expect(() =>
+    verifyPolicy({ ...cfg, tools: { experimental_request_user_input: { enabled: true } } }, argv),
+  ).toThrow();
+  expect(() => verifyPolicy({ ...cfg, analytics: { enabled: true } }, argv)).toThrow();
+  expect(() => verifyPolicy({ ...cfg, otel: { exporter: "unexpected" } }, argv)).toThrow();
+});
 
 for (const dir of ["codex", "claude-code"]) {
   const entry = fileURLToPath(new URL(`../../${dir}/spike/session-check.mjs`, import.meta.url));
@@ -75,6 +187,12 @@ it("Claude 合成成功要求一轮、前言、空工具，额外重试使其失
     summarizeClaude(lines([{ ...rows[0], tools: ["Bash"] }, ...rows.slice(1)])),
   ).toThrow();
   expect(() => summarizeClaude(lines(rows.slice(0, 2)))).toThrow();
+  expect(() =>
+    summarizeClaude(lines([...rows, { type: "system", subtype: "model_refusal_fallback" }])),
+  ).toThrow();
+  expect(() =>
+    summarizeClaude(lines([...rows.slice(0, 2), { ...rows[2], modelUsage: { one: {}, two: {} } }])),
+  ).toThrow();
 });
 
 it("exec 拒绝重试、工具、第二轮和缺少前言的终态", () => {
@@ -86,9 +204,59 @@ it("exec 拒绝重试、工具、第二轮和缺少前言的终态", () => {
   expect(next({ type: "turn.completed" })).toMatchObject({ preambleMatched: true, toolCalls: 0 });
   expect(() => next({ type: "turn.started" })).toThrow();
   expect(() => execState()({ type: "error" })).toThrow();
+  const extra = execState();
+  extra({ type: "thread.started" });
+  extra({ type: "turn.started" });
+  extra({ type: "item.completed", item: { type: "agent_message", text: "unrelated" } });
+  expect(() =>
+    extra({ type: "item.completed", item: { type: "agent_message", text: "PAIHUO_OK" } }),
+  ).toThrow();
+  const diag = execState();
+  diag({ type: "thread.started" });
+  diag({
+    type: "item.completed",
+    item: {
+      type: "error",
+      message:
+        "Model metadata for `gpt-6.2-sol` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.",
+    },
+  });
+  expect(() =>
+    diag({ type: "item.completed", item: { type: "error", message: "private content" } }),
+  ).toThrow(/item.completed\/error/);
   expect(() =>
     execState()({ type: "item.started", item: { type: "command_execution" } }),
   ).toThrow();
+});
+
+it("八段控制脚本经过跨进程合成 stdio，额度数据缺失或付费时拒绝", async () => {
+  const sample = {
+    ordinaryUsageAllowed: true,
+    rateLimits: {
+      limitId: "codex",
+      credits: { hasCredits: false, unlimited: false, balance: "0" },
+      secondary: { windowDurationMins: 10080, usedPercent: 71, resetsAt: 2000000000 },
+    },
+  };
+  expect(quotaSnapshot(sample).usedPercent).toBe(71);
+  expect(() => quotaSnapshot({ ...sample, ordinaryUsageAllowed: false })).toThrow();
+  expect(() =>
+    quotaSnapshot({
+      ...sample,
+      rateLimits: { ...sample.rateLimits, credits: { hasCredits: true } },
+    }),
+  ).toThrow();
+  expect(
+    quotaSnapshot({ ...sample, ordinaryUsageAllowed: null }).requiresHostOrdinaryUsageCheck,
+  ).toBe(true);
+  const { results, modelRequests } = await offlineCases();
+  expect(modelRequests).toBe(0);
+  expect(Object.keys(results)).toHaveLength(8);
+  expect(results.parallel.nativeTurnsOverlap).toBe(true);
+  expect(results.parallel.perThreadFileRead).toBe(true);
+  expect(results.approval.matchedApprovalDeclined).toBe(true);
+  expect(results.image.randomColorOrderMatched).toBe(true);
+  expect(Object.values(results).reduce((n, r) => n + r.syntheticNativeActions, 0)).toBe(13);
 });
 
 it("App Server 探针只发送握手和无效恢复，拒绝非预期请求并保留错误类别", () => {

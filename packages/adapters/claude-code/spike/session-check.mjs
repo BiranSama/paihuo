@@ -75,6 +75,7 @@ export function summarizeClaude(lines) {
     !frames.some(
       (f) =>
         f.subtype === "api_retry" ||
+        f.subtype === "model_refusal_fallback" ||
         f.subtype?.startsWith("hook_") ||
         f.event?.content_block?.type === "tool_use" ||
         f.message?.content?.some?.((b) => b.type === "tool_use"),
@@ -85,7 +86,8 @@ export function summarizeClaude(lines) {
     result.length === 1 &&
       result[0].subtype === "success" &&
       result[0].is_error === false &&
-      result[0].num_turns === 1,
+      result[0].num_turns === 1 &&
+      Object.keys(result[0].modelUsage ?? {}).length <= 1,
     "未取得单轮原生成功终态，请人工复核本次额度。",
   );
   requireThat(result[0].result?.trim() === "PAIHUO_OK", "固定前言标记不匹配。");
