@@ -25,7 +25,7 @@ Windows 本地通过工作区静态检查和 89 项 Vitest。内存适配器用�
 
 ## 接下来的任务
 
-已合并[网页端 Claude 的 PR #14](https://github.com/BiranSama/paihuo/pull/14)。[T-015 原生验证](https://github.com/BiranSama/paihuo/pull/16) 已完成首批预检。Claude Code 的本机订阅未登录。Codex 首次短消息触发了实验脚本的未知事件保护，尚未确认成功终态。Q-013 和真实适配器路线继续等待 T-015。M1 的目标是在桌面完成一次可恢复的真实私聊。
+已合并[网页端 Claude 的 PR #14](https://github.com/BiranSama/paihuo/pull/14)。[T-015 原生验证](https://github.com/BiranSama/paihuo/pull/16) 的 Claude Code 未登录，使用 0 轮。Codex 用现有 ChatGPT 订阅发起了 3 个原生动作。首次单轮执行停在未知事件。第二批引导实测收到了原生线程和轮次开始通知，随后响应流断开，尚未取得最终回复。引导阶段的共享七天窗口前后均为 77%，单次消耗无法归因。其余七个场景暂停，Q-013、T-006 和 T-007 继续等实测。M1 的目标是在桌面完成一次可恢复的真实私聊。[实测记录](docs/log/2026-11-21-07-native-stream.md)
 
 ## 决定与待验
 
