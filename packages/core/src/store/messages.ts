@@ -1,10 +1,10 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { Message } from "@paihuo/shared";
 
-function pages(db: DatabaseSync, direction: "before" | "after") {
+function pages(db: DatabaseSync, direction: "before" | "after", dmOnly = false) {
   const older = direction === "before";
   const order = older ? "DESC" : "ASC";
-  const base = "SELECT * FROM messages WHERE conversation_id = ?";
+  const base = `SELECT * FROM messages WHERE conversation_id = ?${dmOnly ? " AND work_item_id IS NULL" : ""}`;
   const end = `ORDER BY seq ${order} LIMIT ?`;
   const first = db.prepare(`${base} ${end}`);
   const next = db.prepare(`${base} AND seq ${older ? "<" : ">"} ? ${end}`);
@@ -29,6 +29,9 @@ export function createMessages(db: DatabaseSync) {
     SELECT coalesce(max(seq),0) + 1, ?, ?, ?, ?, ?, ?, ? FROM messages WHERE conversation_id = ?
     RETURNING *
   `);
+  // 旧调用者只使用全会话分页。私聊索引查询在第一次按此视图翻页时再准备。
+  let dmBefore: ReturnType<typeof pages> | undefined;
+  let dmAfter: ReturnType<typeof pages> | undefined;
   return {
     get(id: string) {
       return get.get(id) as unknown as Message | undefined;
@@ -47,5 +50,13 @@ export function createMessages(db: DatabaseSync) {
     },
     before: pages(db, "before"),
     after: pages(db, "after"),
+    dmBefore(...args: Parameters<ReturnType<typeof pages>>) {
+      dmBefore ??= pages(db, "before", true);
+      return dmBefore(...args);
+    },
+    dmAfter(...args: Parameters<ReturnType<typeof pages>>) {
+      dmAfter ??= pages(db, "after", true);
+      return dmAfter(...args);
+    },
   };
 }

@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { createDispatchQueries } from "./dispatch";
 import { createMessages } from "./messages";
 import { migrate } from "./migrate";
 import { createRecords } from "./records";
@@ -28,7 +29,13 @@ export function openStore(location: string | { temporary: true }) {
     db.exec("PRAGMA foreign_keys = ON; PRAGMA synchronous = FULL");
     migrate(db);
     db.exec("UPDATE runs SET state = 'unknown' WHERE state IN ('queued','running')");
-    return { dataDir, ...createRecords(db), messages: createMessages(db), close };
+    return {
+      dataDir,
+      ...createRecords(db),
+      messages: createMessages(db),
+      dispatch: createDispatchQueries(db),
+      close,
+    };
   } catch (error) {
     close();
     if (
@@ -41,3 +48,5 @@ export function openStore(location: string | { temporary: true }) {
     throw error;
   }
 }
+
+export type Store = ReturnType<typeof openStore>;
