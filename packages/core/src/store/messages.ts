@@ -1,10 +1,10 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { Message } from "@paihuo/shared";
 
-function pages(db: DatabaseSync, direction: "before" | "after") {
+function pages(db: DatabaseSync, direction: "before" | "after", dmOnly = false) {
   const older = direction === "before";
   const order = older ? "DESC" : "ASC";
-  const base = "SELECT * FROM messages WHERE conversation_id = ?";
+  const base = `SELECT * FROM messages WHERE conversation_id = ?${dmOnly ? " AND work_item_id IS NULL" : ""}`;
   const end = `ORDER BY seq ${order} LIMIT ?`;
   const first = db.prepare(`${base} ${end}`);
   const next = db.prepare(`${base} AND seq ${older ? "<" : ">"} ? ${end}`);
@@ -47,5 +47,7 @@ export function createMessages(db: DatabaseSync) {
     },
     before: pages(db, "before"),
     after: pages(db, "after"),
+    dmBefore: pages(db, "before", true),
+    dmAfter: pages(db, "after", true),
   };
 }
