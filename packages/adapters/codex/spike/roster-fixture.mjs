@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { setTimeout as pause } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { openRpc } from "./scenario-rpc.mjs";
-import { appServerEnv, verifyPolicy } from "./scenarios.mjs";
+import { appServerEnv, verifyPolicy, verifyRoster } from "./scenarios.mjs";
 import { cleanEnv, command, requireThat, withScratch } from "./session-common.mjs";
 
 export async function offlineRoster(exe, argv) {
@@ -27,7 +27,19 @@ export async function offlineRoster(exe, argv) {
       "原生版本不符。",
     );
     const rosters = [];
-    for (const overrides of [[], ["-c", "mcp_servers.sentinel.enabled=false"]]) {
+    const fixedArgs = [script, "--mark", marker];
+    const fixedSpec = {
+      command: process.execPath,
+      args: fixedArgs,
+      enabled: true,
+      required: true,
+      enabled_tools: ["fixed"],
+    };
+    const fixedOverrides = Object.entries(fixedSpec).flatMap(([key, value]) => [
+      "-c",
+      `mcp_servers.paihuo_t015_fixed.${key}=${JSON.stringify(value)}`,
+    ]);
+    for (const overrides of [[], ["-c", "mcp_servers.sentinel.enabled=false", ...fixedOverrides]]) {
       const c = openRpc(
         exe,
         [
@@ -56,6 +68,7 @@ export async function offlineRoster(exe, argv) {
           "有效配置未反映合成服务的启用状态。",
         );
         rosters.push(item.enabled !== false);
+        if (overrides.length) verifyRoster(["sentinel"], cfg.mcp_servers, fixedArgs);
         await pause(1000);
       } finally {
         await c.close();
@@ -74,6 +87,7 @@ export async function offlineRoster(exe, argv) {
       processes: 2,
       markerBeforeThread: false,
       positiveControl: true,
+      restrictedFixedDefinitionVerified: true,
       modelRequests: 0,
     };
   });

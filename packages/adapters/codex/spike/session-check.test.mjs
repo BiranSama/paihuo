@@ -16,6 +16,47 @@ import {
 import { execState, protocolState } from "./session-check.mjs";
 import { cleanEnv, liveArgs, ProbeStop } from "./session-common.mjs";
 
+it("记暗号失败后仅归档本次线程，必要时重连且不发新轮", async () => {
+  const cwd = process.cwd();
+  for (const archiveWorks of [false, true]) {
+    const requests = [];
+    let connections = 0,
+      charged = 0;
+    const connect = async () => {
+      const n = ++connections;
+      return {
+        trace: [],
+        close: async () => {},
+        observed: () => ({ toolCalls: 0, latestCumulativeTokenTotals: [] }),
+        request: async (method, params) => {
+          requests.push([method, params?.threadId]);
+          if (method === "thread/start")
+            return {
+              thread: { id: "owned-fixture", cwd, ephemeral: false },
+              cwd,
+              model: "gpt-6.2-sol",
+              modelProvider: "openai",
+              approvalPolicy: "never",
+              sandbox: { type: "readOnly" },
+            };
+          if (method === "thread/archive" && n === 2 && archiveWorks) return {};
+          throw new ProbeStop("合成阶段失败。");
+        },
+      };
+    };
+    await expect(
+      runCase("resume", { project: cwd, connect, charge: () => charged++ }),
+    ).rejects.toThrow(archiveWorks ? /持久测试线程已归档/ : /本机测试会话可能仍留存/);
+    expect(requests).toEqual([
+      ["thread/start", undefined],
+      ["turn/start", "owned-fixture"],
+      ["thread/archive", "owned-fixture"],
+      ["thread/archive", "owned-fixture"],
+    ]);
+    expect(charged).toBe(1);
+  }
+});
+
 it("未核实的原生线程配置阻止提交第一轮", async () => {
   const cwd = process.cwd();
   const thread = { id: "synthetic", cwd, ephemeral: true };
@@ -79,6 +120,8 @@ it("有效 MCP 清单逐项匹配且远程控制仅限子进程禁用", () => {
   expect(() => check({})).not.toThrow();
   for (const extra of [
     { required: false },
+    { environment_id: "remote" },
+    { tool_timeout_sec: 900 },
     { args: ["other"] },
     { enabled_tools: ["fixed", "extra"] },
     { env: { unwanted: "fixture" } },

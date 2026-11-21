@@ -76,8 +76,18 @@ export function verifyRoster(names, effective, toolArgs) {
           ? item.enabled === true &&
             item.required === true &&
             Object.keys(item).every((k) =>
-              ["enabled", "required", "command", "args", "enabled_tools"].includes(k),
+              [
+                "enabled",
+                "required",
+                "command",
+                "args",
+                "enabled_tools",
+                "environment_id",
+                "tool_timeout_sec",
+              ].includes(k),
             ) &&
+            (!Object.hasOwn(item, "environment_id") || item.environment_id === "local") &&
+            (!Object.hasOwn(item, "tool_timeout_sec") || item.tool_timeout_sec === null) &&
             item.command === process.execPath &&
             JSON.stringify(item.args) === JSON.stringify(toolArgs) &&
             JSON.stringify(item.enabled_tools) === JSON.stringify(["fixed"])
@@ -153,6 +163,7 @@ function roster(data) {
       /^https:\/\/chatgpt\.com\/backend-api\/?$/.test(config.chatgpt_base_url),
     "检测到非标准账户端点，停止。",
   );
+  requireThat(!config.model_providers?.openai?.model_catalog_url, "检测到自定义模型目录，停止。");
   return servers;
 }
 
