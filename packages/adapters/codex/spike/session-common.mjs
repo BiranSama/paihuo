@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   existsSync,
   lstatSync,
@@ -33,6 +33,10 @@ const topics = [
 export class ProbeStop extends Error {}
 export function requireThat(condition, message) {
   if (!condition) throw new ProbeStop(message);
+}
+
+export function tokenCount(value) {
+  return Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 }
 
 export function plan(harness, routes, stages) {
@@ -147,7 +151,7 @@ export function liveArgs(raw, smoke = false) {
   }
   requireThat(
     values["policy-reviewed"] === true,
-    "缺少主机策略核验：确认无托管 hooks、凭据/端点覆写、预置插件或自定义 MCP。",
+    "需确认本次仍生效的托管策略未启用 hooks、凭据或端点覆写、插件或自定义 MCP。",
   );
   if (smoke) {
     requireThat(
@@ -179,7 +183,7 @@ export function reserve(harness) {
   }
   const common = join(admin, "commondir");
   if (existsSync(common)) admin = resolve(admin, readFileSync(common, "utf8").trim());
-  const marker = join(admin, "T-015-" + harness + "-smoke.reserved");
+  const marker = join(admin, `T-015-${harness}-smoke.reserved`);
   try {
     writeFileSync(marker, "1\n", { flag: "wx" });
   } catch {
@@ -191,10 +195,10 @@ export function finish(run) {
   run()
     .then((result) => console.log(JSON.stringify(result, null, 2)))
     .catch((error) => {
+      const message =
+        error instanceof ProbeStop ? error.message : "输入、传输或响应格式异常，停止。";
       console.error(
-        error instanceof ProbeStop
-          ? error.message
-          : "输入、传输或响应格式异常，停止。原始输出保留在进程内。",
+        process.argv[2] === "--job-input" ? JSON.stringify({ probeStop: message }) : message,
       );
       process.exitCode = 2;
     });
@@ -206,7 +210,18 @@ export function sessionMain(main, entry) {
     const args = process.argv.slice(2);
     if (args.length === 1 && args[0] === "--job-input") {
       const packet = readFileSync(0, "utf8");
-      return main(JSON.parse(Buffer.from(packet, "base64").toString("utf8")));
+      const submitted = JSON.parse(Buffer.from(packet, "base64").toString("utf8"));
+      if (submitted.length === 1 && submitted[0] === "job-cleanup-self-test") {
+        // 合成后代本应再运行 15 秒。由 Job 回收，再由外层核查这个 PID 已消失。
+        const fixture = spawn(process.execPath, ["-e", "setTimeout(() => {}, 15000)"], {
+          env: cleanEnv(tmpdir()),
+          stdio: "ignore",
+          windowsHide: true,
+        });
+        fixture.unref();
+        return { fixturePid: fixture.pid };
+      }
+      return main(submitted);
     }
     const jobTest = args.length === 2 && args[0] === "--offline" && args[1] === "job";
     if (args[0] !== "--live" && !jobTest) return main(args);
@@ -215,9 +230,9 @@ export function sessionMain(main, entry) {
       const env = cleanEnv(root, true);
       const shell = join(env.SystemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
       const supervisor = fileURLToPath(new URL("./job.ps1", import.meta.url));
-      const packet = Buffer.from(JSON.stringify(jobTest ? ["--offline", "mcp"] : args)).toString(
-        "base64",
-      );
+      const packet = Buffer.from(
+        JSON.stringify(jobTest ? ["job-cleanup-self-test"] : args),
+      ).toString("base64");
       const result = command(
         shell,
         [
@@ -236,14 +251,29 @@ export function sessionMain(main, entry) {
       );
       if (result.status !== 0) {
         // 仅转述我们的已知安全错误；PowerShell/本机可能附带路径或账户上下文。
-        const safe = result.stderr.trim().split(/\r?\n/).at(-1);
-        const known =
-          typeof safe === "string" &&
-          safe.length <= 120 &&
-          /^[\p{Script=Han}\p{L}\p{N}\s。；、，：%（）.\-/]+$/u.test(safe);
-        throw new ProbeStop(known ? safe : "进程监督或原生探针失败，已关闭 Job。");
+        let reason;
+        try {
+          reason = JSON.parse(result.stderr).probeStop;
+        } catch {}
+        throw new ProbeStop(
+          typeof reason === "string" ? reason : "进程监督或原生探针失败，已关闭 Job。",
+        );
       }
       const summary = JSON.parse(result.stdout);
+      if (jobTest) {
+        requireThat(
+          Number.isSafeInteger(summary.fixturePid) && summary.fixturePid > 0,
+          "合成后代未启动。",
+        );
+        try {
+          process.kill(summary.fixturePid, 0);
+        } catch (error) {
+          if (error.code === "ESRCH")
+            return { mode: "offline-job", windowsJobClosed: true, descendantReleased: true };
+          throw error;
+        }
+        throw new ProbeStop("Windows Job 关闭后仍有合成后代存活。");
+      }
       return { ...summary, windowsJobClosed: true };
     });
   });

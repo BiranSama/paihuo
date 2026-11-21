@@ -72,7 +72,7 @@ export async function checkMcp() {
       { id: 3, method: "tools/call", params: { name: "fixed", arguments: {} } },
       { id: 4, method: "tools/call", params: { name: "fixed", arguments: { unexpected: true } } },
     ];
-    const input = frames.map((f) => JSON.stringify({ jsonrpc: "2.0", ...f })).join("\n") + "\n";
+    const input = `${frames.map((f) => JSON.stringify({ jsonrpc: "2.0", ...f })).join("\n")}\n`;
     const result = command(
       process.execPath,
       [fileURLToPath(import.meta.url), "--serve"],
@@ -109,6 +109,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url) && process.argv[2] === "-
   const reply = responder();
   for await (const line of createInterface({ input: process.stdin, crlfDelay: Infinity })) {
     const answer = reply(JSON.parse(line));
-    if (answer) process.stdout.write(JSON.stringify(answer) + "\n");
+    if (answer) process.stdout.write(`${JSON.stringify(answer)}\n`);
   }
 }

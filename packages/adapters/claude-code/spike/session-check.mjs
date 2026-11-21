@@ -11,6 +11,7 @@ import {
   requireThat,
   reserve,
   sessionMain,
+  tokenCount,
   withScratch,
 } from "../../codex/spike/session-common.mjs";
 import { verifySyntheticStreams } from "./synthetic-events.mjs";
@@ -46,6 +47,7 @@ const stageNames = [
   "--plan",
   "--offline protocol",
   "--offline mcp",
+  "--offline job",
   "--live transport --exe PATH --policy-reviewed",
   "--live auth --exe PATH --policy-reviewed",
   "--live smoke --exe PATH --policy-reviewed --included-only --before-used-percent N --used-turns N",
@@ -97,8 +99,8 @@ export function summarizeClaude(lines) {
         .join("")
         .trim() === "PAIHUO_OK",
     toolCalls: 0,
-    inputTokens: result[0].usage?.input_tokens,
-    outputTokens: result[0].usage?.output_tokens,
+    inputTokens: tokenCount(result[0].usage?.input_tokens),
+    outputTokens: tokenCount(result[0].usage?.output_tokens),
   };
 }
 

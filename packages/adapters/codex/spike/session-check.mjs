@@ -15,6 +15,7 @@ import {
   requireThat,
   reserve,
   sessionMain,
+  tokenCount,
   withScratch,
 } from "./session-common.mjs";
 
@@ -77,14 +78,15 @@ const stages = [
   "--plan",
   "--offline protocol",
   "--offline mcp",
+  "--offline job",
   "--live transport --exe PATH --policy-reviewed",
   "--live auth --exe PATH --policy-reviewed",
   "--live smoke --exe PATH --policy-reviewed --included-only --before-used-percent N --used-turns N",
 ];
 
-function protocolState(child) {
+export function protocolState(child) {
   let state = "handshake";
-  const send = (msg) => child.stdin.write(JSON.stringify(msg) + "\n");
+  const send = (msg) => child.stdin.write(`${JSON.stringify(msg)}\n`);
   send({
     id: 1,
     method: "initialize",
@@ -104,7 +106,7 @@ function protocolState(child) {
       message.id === 2 &&
         state === "resume" &&
         Number.isInteger(message.error?.code) &&
-        /(?:not found|no rollout found|no saved rollout|does not exist|could not find)/i.test(
+        /(?:no rollout found for (?:thread|session)|(?:thread|session|rollout)[^\r\n]{0,90}(?:not found|does not exist)|could not find (?:thread|session|rollout))/i.test(
           message.error?.message ?? "",
         ),
       "无效 ID 未返回明确的不存在错误，不能映射为 native_session_lost。",
@@ -147,8 +149,8 @@ export function execState() {
         preambleMatched: true,
         nativeTurns: 1,
         toolCalls: 0,
-        inputTokens: frame.usage?.input_tokens,
-        outputTokens: frame.usage?.output_tokens,
+        inputTokens: tokenCount(frame.usage?.input_tokens),
+        outputTokens: tokenCount(frame.usage?.output_tokens),
       };
     } else {
       throw new ProbeStop("收到重试、失败或未知事件，停止且不重发；本次预留仍计入。");
@@ -210,7 +212,7 @@ function subscription(exe, cwd, env) {
   const result = command(exe, ["login", "status"], cwd, env);
   requireThat(
     result.status === 0 &&
-      /(?:^|\r?\n)Logged in using ChatGPT(?:\s|$)/i.test(result.stdout + "\n" + result.stderr),
+      /(?:^|\r?\n)Logged in using ChatGPT(?:\s|$)/i.test(`${result.stdout}\n${result.stderr}`),
     "未验证为 ChatGPT 原生登录，停止。",
   );
 }
